@@ -1,3 +1,24 @@
+use lazy_static::lazy_static;
+
+#[derive(Clone)]
+enum Opcode {
+    Unknown,
+    MoveToSrIm,
+}
+
+#[derive(Clone)]
+struct Inst {
+    op: Opcode,
+}
+
+lazy_static! {
+    static ref INST: Vec<Inst> = {
+        let mut m = vec![Inst {op: Opcode::Unknown}; 0x10000];
+        m[0x46fc] = Inst {op: Opcode::MoveToSrIm};
+        m
+    };
+}
+
 const AREG: usize = 8;
 const SP: usize = 7 + AREG;  // Stack pointer = A7 register.
 
@@ -5,18 +26,32 @@ pub struct Cpu {
     ipl: Vec<u8>,
     regs: Vec<u32>,
     pc: u32,
+    sr: u16,
 }
 
 impl Cpu {
     fn reset(&mut self) {
+        self.sr = 0;
         self.regs[SP] = self.read32(0xff0000);
         self.pc = self.read32(0xff0004);
     }
 
     pub fn step(&mut self) {
-        let op = self.read16(self.pc);
+        let startadr = self.pc;
+        let opcode = self.read16(self.pc);
         self.pc += 2;
-        println!("PC={:08x}, OP={:04x}", self.pc, op);
+        let inst = &INST[opcode as usize];
+
+        match inst.op {
+            Opcode::MoveToSrIm => {
+                self.sr = self.read16(self.pc);
+                self.pc += 2;
+                println!("{:08x}: move #${:04x}, SR", startadr, self.sr);
+            },
+            _ => {
+                println!("{:08x}: {:04x}  -- Unknown opcode:", startadr, opcode);
+            },
+        }
     }
 
     fn read8(&self, adr: u32) -> u8 {
@@ -43,7 +78,7 @@ impl Cpu {
 }
 
 pub fn new_cpu(ipl: Vec<u8>) -> Cpu {
-    let mut cpu = Cpu{ipl: ipl, regs: vec![0; 8 + 8], pc: 0};
+    let mut cpu = Cpu{ipl: ipl, regs: vec![0; 8 + 8], pc: 0, sr: 0};
     cpu.reset();
     cpu
 }
