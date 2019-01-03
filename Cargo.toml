@@ -1,0 +1,7 @@
+[package]
+name = "x68kemu"
+version = "0.1.0"
+authors = ["tyfkda <tyfkda@gmail.com>"]
+edition = "2018"
+
+[dependencies]
