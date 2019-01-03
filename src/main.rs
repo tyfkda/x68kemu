@@ -3,7 +3,7 @@ use std::fs;
 mod x68k;
 
 fn main_loop(mut cpu: x68k::Cpu) {
-    cpu.step();
+    cpu.run();
 }
 
 fn main() {
