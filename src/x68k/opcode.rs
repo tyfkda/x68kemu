@@ -7,13 +7,16 @@ pub(crate) enum Opcode {
     Unknown,
     MoveLong,            // move.l XX, YY
     MoveWord,            // move.w XX, YY
+    Moveq,               // moveq #%d, D%d
     MoveToSrIm,          // move #$xxxx, SR
     LeaDirect,           // lea $xxxxxxxx, Ax
+    CmpmByte,            // cmpm.b (Am)+, (An)+
     Reset,               // reset
     AddLong,             // add.l Ds, Dd
     SubaLong,            // suba.l As, Ad
     Dbra,                // dbra $xxxx
     Bsr,                 // bsr $xxxx
+    Rts,                 // rts
 }
 
 #[derive(Clone)]
@@ -49,10 +52,13 @@ lazy_static! {
         mask_inst(&mut m, 0xf1ff, 0x41f9, &Inst {op: Opcode::LeaDirect});  // 41f9, 43f9, ..., 4ff9
         m[0x46fc] = &Inst {op: Opcode::MoveToSrIm};
         m[0x4e70] = &Inst {op: Opcode::Reset};
+        m[0x4e75] = &Inst {op: Opcode::Rts};
         mask_inst(&mut m, 0xfff8, 0x51c8, &Inst {op: Opcode::Dbra});  // 51c8-51cf
         mask_inst(&mut m, 0xff00, 0x6100, &Inst {op: Opcode::Bsr});  // 6100-61ff
+        mask_inst(&mut m, 0xf100, 0x7000, &Inst {op: Opcode::Moveq});  // 7000...70ff, 7200...72ff, ..., 7eff
         mask_inst(&mut m, 0xf1f8, 0x91c8, &Inst {op: Opcode::SubaLong});  // 91c8, 91c9, 93c8, ..., 9fcf
-        mask_inst(&mut m, 0xf1f8, 0xd080, &Inst {op: Opcode::AddLong});  // d080, d081, d380, ..., de87
+        mask_inst(&mut m, 0xf1f8, 0xb108, &Inst {op: Opcode::CmpmByte});  // b108, b109, b308, ..., bf0f
+        mask_inst(&mut m, 0xf1f8, 0xd080, &Inst {op: Opcode::AddLong});  // d080, d081, d280, ..., de87
         m
     };
 }

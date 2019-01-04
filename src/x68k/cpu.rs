@@ -6,8 +6,14 @@ const DREG: usize = 0;
 const AREG: usize = 8;
 const SP: usize = 7 + AREG;  // Stack pointer = A7 register.
 
+const FLAG_C: Word = 1 << 0;
+const FLAG_V: Word = 1 << 1;
+const FLAG_Z: Word = 1 << 2;
+const FLAG_N: Word = 1 << 3;
+
 pub struct Cpu {
     pub(crate) mem: Vec<Byte>,
+    pub(crate) sram: Vec<Byte>,
     pub(crate) ipl: Vec<Byte>,
     pub(crate) regs: Vec<Long>,
     pub(crate) pc: Adr,
@@ -50,6 +56,12 @@ impl Cpu {
                 let src = self.read_source16(((op >> 3) & 7) as usize, m);
                 self.write_destination16(dt, n, src);
             },
+            Opcode::Moveq => {
+                let di = (op >> 9) & 7;
+                let v = op & 0xff;
+                let val = if v < 0x80 { v as i16 } else { -256 + v as i16 };
+                self.regs[di as usize + DREG] = (val as i32) as u32;
+            },
             Opcode::MoveToSrIm => {
                 self.sr = self.read16(self.pc);
                 self.pc += 2;
@@ -59,6 +71,26 @@ impl Cpu {
                 let value = self.read32(self.pc);
                 self.pc += 4;
                 self.regs[di + AREG] = value;
+            },
+            Opcode::CmpmByte => {
+                let si = (op & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let v1 = self.read8(self.regs[di + AREG]);
+                let v2 = self.read8(self.regs[si + AREG]);
+                self.regs[si + AREG] += 1;
+                self.regs[di + AREG] += 1;
+                // TODO: Check flag is true.
+                let mut c = 0;
+                if v1 < v2 {
+                    c |= FLAG_C;
+                }
+                if v1 == v2 {
+                    c |= FLAG_Z;
+                }
+                if ((v1.wrapping_sub(v2)) & 0x80) != 0 {
+                    c |= FLAG_N;
+                }
+                self.sr = (self.sr & 0xff00) | c;
             },
             Opcode::Reset => {
                 // TODO: Implement.
@@ -94,6 +126,9 @@ impl Cpu {
                 self.push32(self.pc);
                 self.pc = ((startadr + 2) as i32 + ofs as i32) as u32;
             },
+            Opcode::Rts => {
+                self.pc = self.pop32();
+            },
             _ => {
                 eprintln!("{:08x}: {:04x}  ; Unknown opcode", startadr, op);
                 panic!("Not implemented");
@@ -105,6 +140,12 @@ impl Cpu {
         let sp = self.regs[SP] - 4;
         self.regs[SP] = sp;
         self.write32(sp, value);
+    }
+
+    fn pop32(&mut self) -> Long {
+        let oldsp = self.regs[SP];
+        self.regs[SP] = oldsp + 4;
+        self.read32(oldsp)
     }
 
     fn read_source16(&mut self, src: usize, m: usize) -> u16 {
@@ -131,6 +172,11 @@ impl Cpu {
         match src {
             0 => {  // move.l Dm, xx
                 self.regs[m + DREG]
+            },
+            3 => {  // move.l (Am)+, xx
+                let adr = self.regs[m + AREG];
+                self.regs[m + AREG] = adr + 4;
+                self.read32(adr)
             },
             7 => {  // Misc.
                 match m {
@@ -190,7 +236,11 @@ impl Cpu {
     }
 
     fn read8(&self, adr: Adr) -> Byte {
-        if 0xfe0000 <= adr && adr <= 0xffffff {
+        if /*0x000000 <= adr &&*/ adr <= 0xffff {
+            self.mem[adr as usize]
+        } else if 0xed0000 <= adr && adr <= 0xed3fff {
+            self.sram[(adr - 0xed0000) as usize]
+        } else if 0xfe0000 <= adr && adr <= 0xffffff {
             self.ipl[(adr - 0xfe0000) as usize]
         } else {
             panic!("Illegal address: {:08x}", adr);
@@ -214,6 +264,8 @@ impl Cpu {
     fn write8(&mut self, adr: Adr, value: Byte) {
         if /*0x000000 <= adr &&*/ adr <= 0xffff {
             self.mem[adr as usize] = value;
+        } else if 0xed0000 <= adr && adr <= 0xed3fff {
+            self.sram[(adr - 0xed0000) as usize] = value;
         } else {
             panic!("Illegal address: {:08x}", adr);
         }

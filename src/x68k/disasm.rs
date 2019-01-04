@@ -23,6 +23,13 @@ pub(crate) fn disasm(cpu: &Cpu, adr: Adr) -> (usize, String) {
             let (dsz, dstr) = disasm_write_destination16(cpu, adr + 2 + ssz, dt, n);
             ((2 + ssz + dsz) as usize, format!("move.w {}, {}", sstr, dstr))
         },
+        Opcode::Moveq => {
+            let di = (op >> 9) & 7;
+            let v = op & 0xff;
+            let val = if v < 0x80 { v as i16 } else { -256 + v as i16 };
+            //d[di].l = val;
+            (2, format!("moveq #{}, D{}", val, di))
+        },
         Opcode::MoveToSrIm => {
             let sr = cpu.read16(adr + 2);
             (4, format!("move #${:04x}, SR", sr))
@@ -31,6 +38,11 @@ pub(crate) fn disasm(cpu: &Cpu, adr: Adr) -> (usize, String) {
             let di = ((op >> 9) & 7) as usize;
             let value = cpu.read32(adr + 2);
             (6, format!("lea ${:08x}.l, A{:?}", value, di))
+        },
+        Opcode::CmpmByte => {
+            let si = op & 7;
+            let di = (op >> 9) & 7;
+            (2, format!("cmpm.b (A{})+, (A{})+", si, di))
         },
         Opcode::Reset => {
             (2, "reset".to_string())
@@ -59,6 +71,9 @@ pub(crate) fn disasm(cpu: &Cpu, adr: Adr) -> (usize, String) {
             }
             let jmp = ((adr + 2) as i32 + ofs as i32) as u32;
             (2 + sz, format!("bsr ${:06x}", jmp))
+        },
+        Opcode::Rts => {
+            (2, String::from("rts"))
         },
         _ => {
             eprintln!("{:06x}: {:04x}  ; Unknown opcode", adr, op);
@@ -91,6 +106,9 @@ fn disasm_read_source32(cpu: &Cpu, adr: Adr,  src: usize, m: Word) -> (u32, Stri
         0 => {  // move.l Dm, xx
             (0, format!("D{}", m))
         },
+        3 => {  // move.l (Am)+, xx
+            (0, format!("(A{})+", m))
+        },
         7 => {  // Misc.
             match m {
                 4 => {  // move.l #$XXXX, xx
@@ -119,13 +137,24 @@ fn disasm_write_destination16(_cpu: &Cpu, _adr: Adr, dst: usize, n: Word) -> (u3
     }
 }
 
-fn disasm_write_destination32(_cpu: &Cpu, _adr: Adr, dst: usize, n: Word) -> (u32, String) {
+fn disasm_write_destination32(cpu: &Cpu, adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
             (0, format!("D{}", n))
         },
         3 => {
             (0, format!("(A{})+", n))
+        },
+        7 => {
+            match n {
+                1 => {
+                    let d = cpu.read32(adr);
+                    (4, format!("${:08x}", d))
+                },
+                _ => {
+                    panic!("Not implemented, n={}", n);
+                },
+            }
         },
         _ => {
             panic!("Not implemented, dst={}", dst);
