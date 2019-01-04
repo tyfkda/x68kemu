@@ -36,11 +36,18 @@ impl Bus {
     pub fn write8(&mut self, adr: Adr, value: Byte) {
         if /*0x000000 <= adr &&*/ adr <= 0xffff {
             self.mem[adr as usize] = value;
+        } else if 0xe8e00d == adr {  // ?
+            // TODO: Implement.
         } else if 0xed0000 <= adr && adr <= 0xed3fff {
             self.sram[(adr - 0xed0000) as usize] = value;
         } else {
             panic!("Illegal address: {:08x}", adr);
         }
+    }
+
+    pub fn write16(&mut self, adr: Adr, value: Word) {
+        self.write8(adr    , (value >>  8) as Byte);
+        self.write8(adr + 1,  value        as Byte);
     }
 
     pub fn write32(&mut self, adr: Adr, value: Long) {

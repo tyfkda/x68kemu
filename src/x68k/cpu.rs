@@ -40,6 +40,13 @@ impl Cpu {
         let inst = &INST[op as usize];
 
         match inst.op {
+            Opcode::MoveByte => {
+                let n = ((op >> 9) & 7) as usize;
+                let m = (op & 7) as usize;
+                let dt = ((op >> 6) & 7) as usize;
+                let src = self.read_source8(((op >> 3) & 7) as usize, m);
+                self.write_destination8(dt, n, src);
+            },
             Opcode::MoveLong => {
                 let n = ((op >> 9) & 7) as usize;
                 let m = (op & 7) as usize;
@@ -69,6 +76,24 @@ impl Cpu {
                 let value = self.read32(self.pc);
                 self.pc += 4;
                 self.a[di] = value;
+            },
+            Opcode::Clr => {
+                let dt = ((op >> 3) & 7) as usize;
+                let n = (op & 7) as usize;
+                match op & 0xffc0 {
+                    0x4200 => {  // byte
+                        self.write_destination8(dt, n, 0);
+                    },
+                    0x4240 => {  // word
+                        self.write_destination16(dt, n, 0);
+                    },
+                    0x4280 => {  // long
+                        self.write_destination32(dt, n, 0);
+                    },
+                    _ => {
+                        panic!("Must not happen");
+                    },
+                }
             },
             Opcode::CmpmByte => {
                 let si = (op & 7) as usize;
@@ -103,6 +128,14 @@ impl Cpu {
                 let si = (op & 7) as usize;
                 self.a[di] -= self.a[si];
             },
+            Opcode::BranchCond => {
+                let (ofs, sz) = get_branch_offset(op, &self.bus, self.pc);
+                let mut newpc = self.pc + sz;
+                if (self.sr & FLAG_Z) == 0 {
+                    newpc = ((startadr + 2) as i32 + ofs as i32) as u32;
+                }
+                self.pc = newpc;
+            },
             Opcode::Dbra => {
                 let si = (op & 7) as usize;
                 let ofs = self.read16(self.pc) as i16;
@@ -116,11 +149,8 @@ impl Cpu {
                 }
             },
             Opcode::Bsr => {
-                let mut ofs = ((op & 0x00ff) as i8) as i16;
-                if ofs == 0 {
-                    ofs = self.read16(self.pc) as i16;
-                    self.pc += 2;
-                }
+                let (ofs, sz) = get_branch_offset(op, &self.bus, self.pc);
+                self.pc += sz;
                 self.push32(self.pc);
                 self.pc = ((startadr + 2) as i32 + ofs as i32) as u32;
             },
@@ -144,6 +174,39 @@ impl Cpu {
         let oldsp = self.a[SP];
         self.a[SP] = oldsp + 4;
         self.read32(oldsp)
+    }
+
+    fn read_source8(&mut self, src: usize, m: usize) -> u8 {
+        match src {
+            0 => {  // move.l Dm, xx
+                self.d[m] as u8
+            },
+            3 => {  // move.b (Am)+, xx
+                let adr = self.a[m];
+                self.a[m] = adr + 1;
+                self.read8(adr)
+            },
+            7 => {  // Misc.
+                match m {
+                    1 => {  // move.b $XXXXXXXX.l, xx
+                        let adr = self.read32(self.pc);
+                        self.pc += 4;
+                        self.read8(adr)
+                    },
+                    4 => {  // move.b #$XXXX, xx
+                        let value = self.read16(self.pc);
+                        self.pc += 2;
+                        (value & 0xff) as u8
+                    },
+                    _ => {
+                        panic!("Not implemented, m={}", m);
+                    },
+                }
+            },
+            _ => {
+                panic!("Not implemented, src={}", src);
+            },
+        }
     }
 
     fn read_source16(&mut self, src: usize, m: usize) -> u16 {
@@ -171,6 +234,9 @@ impl Cpu {
             0 => {  // move.l Dm, xx
                 self.d[m]
             },
+            1 => {  // move.l Am, xx
+                self.a[m]
+            },
             3 => {  // move.l (Am)+, xx
                 let adr = self.a[m];
                 self.a[m] = adr + 4;
@@ -194,10 +260,55 @@ impl Cpu {
         }
     }
 
+    fn write_destination8(&mut self, dst: usize, n: usize, value: Byte) {
+        match dst {
+            0 => {
+                self.d[n] = (self.d[n] & 0xffffff00) | (value as u32);
+            },
+            3 => {
+                let adr = self.a[n];
+                self.write8(adr, value);
+                self.a[n] = adr + 1;
+            },
+            7 => {
+                match n {
+                    1 => {
+                        let d = self.read32(self.pc);
+                        self.pc += 4;
+                        self.write8(d, value);
+                    },
+                    _ => {
+                        panic!("Not implemented, n={}", n);
+                    },
+                }
+            },
+            _ => {
+                panic!("Not implemented, dst={}", dst);
+            },
+        }
+    }
+
     fn write_destination16(&mut self, dst: usize, n: usize, value: Word) {
         match dst {
             0 => {
                 self.d[n] = (self.d[n] & 0xffff0000) | (value as u32);
+            },
+            3 => {
+                let adr = self.a[n];
+                self.write16(adr, value);
+                self.a[n] = adr + 2;
+            },
+            7 => {
+                match n {
+                    1 => {
+                        let d = self.read32(self.pc);
+                        self.pc += 4;
+                        self.write16(d, value);
+                    },
+                    _ => {
+                        panic!("Not implemented, n={}", n);
+                    },
+                }
             },
             _ => {
                 panic!("Not implemented, dst={}", dst);
@@ -245,7 +356,24 @@ impl Cpu {
         self.bus.read32(adr)
     }
 
+    fn write8(&mut self, adr: Adr, value: Byte) {
+        self.bus.write8(adr, value);
+    }
+
+    fn write16(&mut self, adr: Adr, value: Word) {
+        self.bus.write16(adr, value);
+    }
+
     fn write32(&mut self, adr: Adr, value: Long) {
         self.bus.write32(adr, value);
+    }
+}
+
+pub fn get_branch_offset(op: Word, bus: &Bus, adr: Adr) -> (i16, u32) {
+    let ofs = ((op & 0x00ff) as i8) as i16;
+    if ofs != 0 {
+        (ofs, 0)
+    } else {
+        (bus.read16(adr) as i16, 2)
     }
 }
