@@ -70,6 +70,8 @@ impl Cpu {
 
     pub fn run(&mut self) {
         loop {
+            let (_sz, mnemonic) = disasm(&self, self.pc);
+            println!("{:08x}: {}", self.pc, mnemonic);
             self.step();
         }
     }
@@ -85,31 +87,26 @@ impl Cpu {
                 let n = ((op >> 9) & 7) as usize;
                 let m = (op & 7) as usize;
                 let dt = ((op >> 6) & 7) as usize;
-                let (src, src_str) = self.read_source32(((op >> 3) & 7) as usize, m);
-                let dst_str = self.write_destination32(dt, n, src);
-                println!("{:08x}: move.l {}, {}", startadr, src_str, dst_str);
+                let src = self.read_source32(((op >> 3) & 7) as usize, m);
+                self.write_destination32(dt, n, src);
             },
             Opcode::MoveToSrIm => {
                 self.sr = self.read16(self.pc);
                 self.pc += 2;
-                println!("{:08x}: move #${:04x}, SR", startadr, self.sr);
             },
             Opcode::LeaDirect => {
                 let di = ((op >> 9) & 7) as usize;
                 let value = self.read32(self.pc);
                 self.pc += 4;
                 self.regs[di + AREG] = value;
-                println!("{:08x}: lea ${:08x}.l, A{:?}", startadr, value, di);
             },
             Opcode::Reset => {
                 // TODO: Implement.
-                println!("{:08x}: reset", startadr);
             },
             Opcode::SubaLong => {
                 let di = ((op >> 9) & 7) as usize;
                 let si = (op & 7) as usize;
                 self.regs[di + AREG] -= self.regs[si + AREG];
-                println!("{:08x}: suba.l A{:?}, A{:?}", startadr, si, di);
             },
             Opcode::Bsr => {
                 let mut ofs = ((op & 0x00ff) as i8) as i16;
@@ -119,7 +116,6 @@ impl Cpu {
                 }
                 self.push32(self.pc);
                 self.pc = ((startadr + 2) as i32 + ofs as i32) as u32;
-                println!("{:08x}: bsr ${:06x}", startadr, self.pc);
             },
             _ => {
                 eprintln!("{:08x}: {:04x}  ; Unknown opcode", startadr, op);
@@ -134,17 +130,17 @@ impl Cpu {
         self.write32(sp, value);
     }
 
-    fn read_source32(&mut self, src: usize, m: usize) -> (u32, String) {
+    fn read_source32(&mut self, src: usize, m: usize) -> u32 {
         match src {
             0 => {  // move.l Dm, xx
-                (self.regs[m + DREG], String::from(format!("D{}", m)))
+                self.regs[m + DREG]
             },
             7 => {  // Misc.
                 match m {
                     4 => {  // move.l #$XXXX, xx
                         let value = self.read32(self.pc);
                         self.pc += 4;
-                        (value, String::from(format!("#${:08x}", value)))
+                        value
                     },
                     _ => {
                         panic!("Not implemented, m={:?}", m);
@@ -157,11 +153,10 @@ impl Cpu {
         }
     }
 
-    fn write_destination32(&mut self, dst: usize, n: usize, value: u32) -> String {
+    fn write_destination32(&mut self, dst: usize, n: usize, value: u32) {
         match dst {
             0 => {
                 self.regs[n + DREG] = value;
-                String::from(format!("D{}", n))
             },
             _ => {
                 panic!("Not implemented, dst={:?}", dst);
@@ -211,4 +206,87 @@ pub fn new_cpu(ipl: Vec<u8>) -> Cpu {
     let mut cpu = Cpu{mem: vec![0; 0x10000], ipl: ipl, regs: vec![0; 8 + 8], pc: 0, sr: 0};
     cpu.reset();
     cpu
+}
+
+////////////////////////////////////////////////////////////////
+// disasm
+
+fn disasm(cpu: &Cpu, adr: u32) -> (usize, String) {
+    let op = cpu.read16(adr);
+    let inst = &INST[op as usize];
+
+    match inst.op {
+        Opcode::MoveLong => {
+            let n = (op >> 9) & 7;
+            let m = op & 7;
+            let dt = ((op >> 6) & 7) as usize;
+            let (ssz, sstr) = disasm_read_source32(cpu, adr + 2, ((op >> 3) & 7) as usize, m);
+            let (dsz, dstr) = disasm_write_destination32(cpu, adr + 2 + ssz, dt, n);
+            ((2 + ssz + dsz) as usize, format!("move.l {}, {}", sstr, dstr))
+        },
+        Opcode::MoveToSrIm => {
+            let sr = cpu.read16(adr + 2);
+            (2, format!("move #${:04x}, SR", sr))
+        },
+        Opcode::LeaDirect => {
+            let di = ((op >> 9) & 7) as usize;
+            let value = cpu.read32(adr + 2);
+            (4, format!("lea ${:08x}.l, A{:?}", value, di))
+        },
+        Opcode::Reset => {
+            (0, "reset".to_string())
+        },
+        Opcode::SubaLong => {
+            let di = ((op >> 9) & 7) as usize;
+            let si = (op & 7) as usize;
+            (0, format!("suba.l A{}, A{}", si, di))
+        },
+        Opcode::Bsr => {
+            let mut ofs = ((op & 0x00ff) as i8) as i16;
+            let mut sz = 0;
+            if ofs == 0 {
+                ofs = cpu.read16(adr + 2) as i16;
+                sz = 2;
+            }
+            let jmp = ((adr + 2) as i32 + ofs as i32) as u32;
+            (sz, format!("bsr ${:06x}", jmp))
+        },
+        _ => {
+            eprintln!("{:08x}: {:04x}  ; Unknown opcode", adr, op);
+            panic!("Not implemented");
+        },
+    }
+}
+
+fn disasm_read_source32(cpu: &Cpu, adr: u32,  src: usize, m: u16) -> (u32, String) {
+    match src {
+        0 => {  // move.l Dm, xx
+            (0, format!("D{}", m))
+        },
+        7 => {  // Misc.
+            match m {
+                4 => {  // move.l #$XXXX, xx
+                    let value = cpu.read32(adr);
+                    (4, format!("#${:08x}", value))
+                },
+                _ => {
+                    panic!("Not implemented, m={:?}", m);
+                },
+            }
+        },
+        _ => {
+            panic!("Not implemented, src={:?}", src);
+        },
+    }
+}
+
+fn disasm_write_destination32(_cpu: &Cpu, _adr: u32, dst: usize, n: u16) -> (u32, String) {
+    match dst {
+        0 => {
+            (0, format!("D{}", n))
+        },
+        _ => {
+            panic!("Not implemented, dst={:?}", dst);
+        },
+    }
 }
