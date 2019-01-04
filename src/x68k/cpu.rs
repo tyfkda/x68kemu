@@ -2,9 +2,7 @@ use super::disasm::{disasm};
 use super::opcode::{Opcode, INST};
 use super::types::{Byte, Word, Long, Adr};
 
-const DREG: usize = 0;
-const AREG: usize = 8;
-const SP: usize = 7 + AREG;  // Stack pointer = A7 register.
+const SP: usize = 7;  // Stack pointer = A7 register.
 
 const FLAG_C: Word = 1 << 0;
 const FLAG_V: Word = 1 << 1;
@@ -15,7 +13,8 @@ pub struct Cpu {
     pub(crate) mem: Vec<Byte>,
     pub(crate) sram: Vec<Byte>,
     pub(crate) ipl: Vec<Byte>,
-    pub(crate) regs: Vec<Long>,
+    pub(crate) a: [Adr; 8],  // Address registers
+    pub(crate) d: [Long; 8],  // Data registers
     pub(crate) pc: Adr,
     pub(crate) sr: Word,
 }
@@ -23,7 +22,7 @@ pub struct Cpu {
 impl Cpu {
     pub fn reset(&mut self) {
         self.sr = 0;
-        self.regs[SP] = self.read32(0xff0000);
+        self.a[SP] = self.read32(0xff0000);
         self.pc = self.read32(0xff0004);
     }
 
@@ -60,7 +59,7 @@ impl Cpu {
                 let di = (op >> 9) & 7;
                 let v = op & 0xff;
                 let val = if v < 0x80 { v as i16 } else { -256 + v as i16 };
-                self.regs[di as usize + DREG] = (val as i32) as u32;
+                self.d[di as usize] = (val as i32) as u32;
             },
             Opcode::MoveToSrIm => {
                 self.sr = self.read16(self.pc);
@@ -70,15 +69,15 @@ impl Cpu {
                 let di = ((op >> 9) & 7) as usize;
                 let value = self.read32(self.pc);
                 self.pc += 4;
-                self.regs[di + AREG] = value;
+                self.a[di] = value;
             },
             Opcode::CmpmByte => {
                 let si = (op & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
-                let v1 = self.read8(self.regs[di + AREG]);
-                let v2 = self.read8(self.regs[si + AREG]);
-                self.regs[si + AREG] += 1;
-                self.regs[di + AREG] += 1;
+                let v1 = self.read8(self.a[di]);
+                let v2 = self.read8(self.a[si]);
+                self.a[si] += 1;
+                self.a[di] += 1;
                 // TODO: Check flag is true.
                 let mut c = 0;
                 if v1 < v2 {
@@ -98,21 +97,21 @@ impl Cpu {
             Opcode::AddLong => {
                 let di = ((op >> 9) & 7) as usize;
                 let si = (op & 7) as usize;
-                self.regs[di + DREG] = self.regs[di + DREG].wrapping_add(self.regs[si + DREG]);
+                self.d[di] = self.d[di].wrapping_add(self.d[si]);
             },
             Opcode::SubaLong => {
                 let di = ((op >> 9) & 7) as usize;
                 let si = (op & 7) as usize;
-                self.regs[di + AREG] -= self.regs[si + AREG];
+                self.a[di] -= self.a[si];
             },
             Opcode::Dbra => {
                 let si = (op & 7) as usize;
                 let ofs = self.read16(self.pc) as i16;
                 self.pc += 2;
 
-                let l = self.regs[si + DREG];
+                let l = self.d[si];
                 let w = (l as u16).wrapping_sub(1);
-                self.regs[si + DREG] = (l & 0xffff0000) | (w as u32);
+                self.d[si] = (l & 0xffff0000) | (w as u32);
                 if w != 0xffff {
                     self.pc = (self.pc - 2).wrapping_add((ofs as i32) as u32);
                 }
@@ -137,14 +136,14 @@ impl Cpu {
     }
 
     fn push32(&mut self, value: Long) {
-        let sp = self.regs[SP] - 4;
-        self.regs[SP] = sp;
+        let sp = self.a[SP] - 4;
+        self.a[SP] = sp;
         self.write32(sp, value);
     }
 
     fn pop32(&mut self) -> Long {
-        let oldsp = self.regs[SP];
-        self.regs[SP] = oldsp + 4;
+        let oldsp = self.a[SP];
+        self.a[SP] = oldsp + 4;
         self.read32(oldsp)
     }
 
@@ -171,11 +170,11 @@ impl Cpu {
     fn read_source32(&mut self, src: usize, m: usize) -> u32 {
         match src {
             0 => {  // move.l Dm, xx
-                self.regs[m + DREG]
+                self.d[m]
             },
             3 => {  // move.l (Am)+, xx
-                let adr = self.regs[m + AREG];
-                self.regs[m + AREG] = adr + 4;
+                let adr = self.a[m];
+                self.a[m] = adr + 4;
                 self.read32(adr)
             },
             7 => {  // Misc.
@@ -199,7 +198,7 @@ impl Cpu {
     fn write_destination16(&mut self, dst: usize, n: usize, value: Word) {
         match dst {
             0 => {
-                self.regs[n + DREG] = (self.regs[n + DREG] & 0xffff0000) | (value as u32);
+                self.d[n] = (self.d[n] & 0xffff0000) | (value as u32);
             },
             _ => {
                 panic!("Not implemented, dst={}", dst);
@@ -210,12 +209,12 @@ impl Cpu {
     fn write_destination32(&mut self, dst: usize, n: usize, value: Long) {
         match dst {
             0 => {
-                self.regs[n + DREG] = value;
+                self.d[n] = value;
             },
             3 => {
-                let adr = self.regs[n + AREG];
+                let adr = self.a[n];
                 self.write32(adr, value);
-                self.regs[n + AREG] = adr + 4;
+                self.a[n] = adr + 4;
             },
             7 => {
                 match n {

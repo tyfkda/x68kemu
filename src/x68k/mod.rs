@@ -11,7 +11,8 @@ pub fn new_cpu(ipl: Vec<Byte>) -> Cpu {
         mem: vec![0; 0x10000],
         sram: vec![0; 0x4000],
         ipl: ipl,
-        regs: vec![0; 8 + 8],
+        a: [0; 8],
+        d: [0; 8],
         pc: 0,
         sr: 0,
     };
