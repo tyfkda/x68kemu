@@ -4,10 +4,13 @@ use lazy_static::lazy_static;
 enum Opcode {
     Unknown,
     MoveLong,            // move.l XX, YY
+    MoveWord,            // move.w XX, YY
     MoveToSrIm,          // move #$xxxx, SR
     LeaDirect,           // lea $xxxxxxxx, Ax
     Reset,               // reset
+    AddLong,             // add.l Ds, Dd
     SubaLong,            // suba.l As, Ad
+    Dbra,                // dbra $xxxx
     Bsr,                 // bsr $xxxx
 }
 
@@ -40,11 +43,14 @@ lazy_static! {
     static ref INST: Vec<&'static Inst> = {
         let mut m = vec![&Inst {op: Opcode::Unknown}; 0x10000];
         mask_inst(&mut m, 0xf000, 0x2000, &Inst {op: Opcode::MoveLong});  // 2000-2fff
+        mask_inst(&mut m, 0xf000, 0x3000, &Inst {op: Opcode::MoveWord});  // 3000-3fff
         mask_inst(&mut m, 0xf1ff, 0x41f9, &Inst {op: Opcode::LeaDirect});  // 41f9, 43f9, ..., 4ff9
         m[0x46fc] = &Inst {op: Opcode::MoveToSrIm};
         m[0x4e70] = &Inst {op: Opcode::Reset};
+        mask_inst(&mut m, 0xfff8, 0x51c8, &Inst {op: Opcode::Dbra});  // 51c8-51cf
         mask_inst(&mut m, 0xff00, 0x6100, &Inst {op: Opcode::Bsr});  // 6100-61ff
         mask_inst(&mut m, 0xf1f8, 0x91c8, &Inst {op: Opcode::SubaLong});  // 91c8, 91c9, 93c8, ..., 9fcf
+        mask_inst(&mut m, 0xf1f8, 0xd080, &Inst {op: Opcode::AddLong});  // d080, d081, d380, ..., de87
         m
     };
 }
@@ -90,6 +96,13 @@ impl Cpu {
                 let src = self.read_source32(((op >> 3) & 7) as usize, m);
                 self.write_destination32(dt, n, src);
             },
+            Opcode::MoveWord => {
+                let n = ((op >> 9) & 7) as usize;
+                let m = (op & 7) as usize;
+                let dt = ((op >> 6) & 7) as usize;
+                let src = self.read_source16(((op >> 3) & 7) as usize, m);
+                self.write_destination16(dt, n, src);
+            },
             Opcode::MoveToSrIm => {
                 self.sr = self.read16(self.pc);
                 self.pc += 2;
@@ -103,10 +116,27 @@ impl Cpu {
             Opcode::Reset => {
                 // TODO: Implement.
             },
+            Opcode::AddLong => {
+                let di = ((op >> 9) & 7) as usize;
+                let si = (op & 7) as usize;
+                self.regs[di + DREG] = self.regs[di + DREG].wrapping_add(self.regs[si + DREG]);
+            },
             Opcode::SubaLong => {
                 let di = ((op >> 9) & 7) as usize;
                 let si = (op & 7) as usize;
                 self.regs[di + AREG] -= self.regs[si + AREG];
+            },
+            Opcode::Dbra => {
+                let si = (op & 7) as usize;
+                let ofs = self.read16(self.pc) as i16;
+                self.pc += 2;
+
+                let l = self.regs[si + DREG];
+                let w = (l as u16).wrapping_sub(1);
+                self.regs[si + DREG] = (l & 0xffff0000) | (w as u32);
+                if w != 0xffff {
+                    self.pc = (self.pc - 2).wrapping_add((ofs as i32) as u32);
+                }
             },
             Opcode::Bsr => {
                 let mut ofs = ((op & 0x00ff) as i8) as i16;
@@ -130,6 +160,26 @@ impl Cpu {
         self.write32(sp, value);
     }
 
+    fn read_source16(&mut self, src: usize, m: usize) -> u16 {
+        match src {
+            7 => {  // Misc.
+                match m {
+                    4 => {  // move.w #$XXXX, xx
+                        let value = self.read16(self.pc);
+                        self.pc += 2;
+                        value
+                    },
+                    _ => {
+                        panic!("Not implemented, m={}", m);
+                    },
+                }
+            },
+            _ => {
+                panic!("Not implemented, src={}", src);
+            },
+        }
+    }
+
     fn read_source32(&mut self, src: usize, m: usize) -> u32 {
         match src {
             0 => {  // move.l Dm, xx
@@ -143,12 +193,23 @@ impl Cpu {
                         value
                     },
                     _ => {
-                        panic!("Not implemented, m={:?}", m);
+                        panic!("Not implemented, m={}", m);
                     },
                 }
             },
             _ => {
-                panic!("Not implemented, src={:?}", src);
+                panic!("Not implemented, src={}", src);
+            },
+        }
+    }
+
+    fn write_destination16(&mut self, dst: usize, n: usize, value: u16) {
+        match dst {
+            0 => {
+                self.regs[n + DREG] = (self.regs[n + DREG] & 0xffff0000) | (value as u32);
+            },
+            _ => {
+                panic!("Not implemented, dst={}", dst);
             },
         }
     }
@@ -158,8 +219,13 @@ impl Cpu {
             0 => {
                 self.regs[n + DREG] = value;
             },
+            3 => {
+                let adr = self.regs[n + AREG];
+                self.write32(adr, value);
+                self.regs[n + AREG] = adr + 4;
+            },
             _ => {
-                panic!("Not implemented, dst={:?}", dst);
+                panic!("Not implemented, dst={}", dst);
             },
         }
     }
@@ -224,6 +290,14 @@ fn disasm(cpu: &Cpu, adr: u32) -> (usize, String) {
             let (dsz, dstr) = disasm_write_destination32(cpu, adr + 2 + ssz, dt, n);
             ((2 + ssz + dsz) as usize, format!("move.l {}, {}", sstr, dstr))
         },
+        Opcode::MoveWord => {
+            let n = (op >> 9) & 7;
+            let m = op & 7;
+            let dt = ((op >> 6) & 7) as usize;
+            let (ssz, sstr) = disasm_read_source16(cpu, adr + 2, ((op >> 3) & 7) as usize, m);
+            let (dsz, dstr) = disasm_write_destination16(cpu, adr + 2 + ssz, dt, n);
+            ((2 + ssz + dsz) as usize, format!("move.w {}, {}", sstr, dstr))
+        },
         Opcode::MoveToSrIm => {
             let sr = cpu.read16(adr + 2);
             (2, format!("move #${:04x}, SR", sr))
@@ -236,10 +310,20 @@ fn disasm(cpu: &Cpu, adr: u32) -> (usize, String) {
         Opcode::Reset => {
             (0, "reset".to_string())
         },
+        Opcode::AddLong => {
+            let di = ((op >> 9) & 7) as usize;
+            let si = (op & 7) as usize;
+            (0, format!("add.l D{}, D{}", si, di))
+        },
         Opcode::SubaLong => {
             let di = ((op >> 9) & 7) as usize;
             let si = (op & 7) as usize;
             (0, format!("suba.l A{}, A{}", si, di))
+        },
+        Opcode::Dbra => {
+            let si = op & 7;
+            let ofs = cpu.read16(adr + 2) as i16;
+            (2, format!("dbra D{}, {:06x}", si, (adr + 2).wrapping_add((ofs as i32) as u32)))
         },
         Opcode::Bsr => {
             let mut ofs = ((op & 0x00ff) as i8) as i16;
@@ -258,6 +342,25 @@ fn disasm(cpu: &Cpu, adr: u32) -> (usize, String) {
     }
 }
 
+fn disasm_read_source16(cpu: &Cpu, adr: u32,  src: usize, m: u16) -> (u32, String) {
+    match src {
+        7 => {  // Misc.
+            match m {
+                4 => {  // move.w #$XXXX, xx
+                    let value = cpu.read16(adr);
+                    (2, format!("#${:04x}", value))
+                },
+                _ => {
+                    panic!("Not implemented, m={}", m);
+                },
+            }
+        },
+        _ => {
+            panic!("Not implemented, src={}", src);
+        },
+    }
+}
+
 fn disasm_read_source32(cpu: &Cpu, adr: u32,  src: usize, m: u16) -> (u32, String) {
     match src {
         0 => {  // move.l Dm, xx
@@ -270,12 +373,23 @@ fn disasm_read_source32(cpu: &Cpu, adr: u32,  src: usize, m: u16) -> (u32, Strin
                     (4, format!("#${:08x}", value))
                 },
                 _ => {
-                    panic!("Not implemented, m={:?}", m);
+                    panic!("Not implemented, m={}", m);
                 },
             }
         },
         _ => {
-            panic!("Not implemented, src={:?}", src);
+            panic!("Not implemented, src={}", src);
+        },
+    }
+}
+
+fn disasm_write_destination16(_cpu: &Cpu, _adr: u32, dst: usize, n: u16) -> (u32, String) {
+    match dst {
+        0 => {
+            (0, format!("D{}", n))
+        },
+        _ => {
+            panic!("Not implemented, dst={}", dst);
         },
     }
 }
@@ -285,8 +399,11 @@ fn disasm_write_destination32(_cpu: &Cpu, _adr: u32, dst: usize, n: u16) -> (u32
         0 => {
             (0, format!("D{}", n))
         },
+        3 => {
+            (0, format!("(A{})+", n))
+        },
         _ => {
-            panic!("Not implemented, dst={:?}", dst);
+            panic!("Not implemented, dst={}", dst);
         },
     }
 }
