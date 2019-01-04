@@ -1,5 +1,10 @@
 use lazy_static::lazy_static;
 
+type Byte = u8;
+type Word = u16;
+type Long = u32;
+type Adr = u32;
+
 #[derive(Clone)]
 enum Opcode {
     Unknown,
@@ -19,7 +24,7 @@ struct Inst {
     op: Opcode,
 }
 
-fn mask_inst(m: &mut Vec<&Inst>, mask: u16, value: u16, inst: &'static Inst) {
+fn mask_inst(m: &mut Vec<&Inst>, mask: Word, value: Word, inst: &'static Inst) {
     let mut shift = mask;
     let mut masked: Vec<usize> = vec!();
     // Find masked bits.
@@ -60,11 +65,11 @@ const AREG: usize = 8;
 const SP: usize = 7 + AREG;  // Stack pointer = A7 register.
 
 pub struct Cpu {
-    mem: Vec<u8>,
-    ipl: Vec<u8>,
-    regs: Vec<u32>,
-    pc: u32,
-    sr: u16,
+    mem: Vec<Byte>,
+    ipl: Vec<Byte>,
+    regs: Vec<Long>,
+    pc: Adr,
+    sr: Word,
 }
 
 impl Cpu {
@@ -154,7 +159,7 @@ impl Cpu {
         }
     }
 
-    fn push32(&mut self, value: u32) {
+    fn push32(&mut self, value: Long) {
         let sp = self.regs[SP] - 4;
         self.regs[SP] = sp;
         self.write32(sp, value);
@@ -203,7 +208,7 @@ impl Cpu {
         }
     }
 
-    fn write_destination16(&mut self, dst: usize, n: usize, value: u16) {
+    fn write_destination16(&mut self, dst: usize, n: usize, value: Word) {
         match dst {
             0 => {
                 self.regs[n + DREG] = (self.regs[n + DREG] & 0xffff0000) | (value as u32);
@@ -214,7 +219,7 @@ impl Cpu {
         }
     }
 
-    fn write_destination32(&mut self, dst: usize, n: usize, value: u32) {
+    fn write_destination32(&mut self, dst: usize, n: usize, value: Long) {
         match dst {
             0 => {
                 self.regs[n + DREG] = value;
@@ -230,7 +235,7 @@ impl Cpu {
         }
     }
 
-    fn read8(&self, adr: u32) -> u8 {
+    fn read8(&self, adr: Adr) -> Byte {
         if 0xfe0000 <= adr && adr <= 0xffffff {
             self.ipl[(adr - 0xfe0000) as usize]
         } else {
@@ -238,21 +243,21 @@ impl Cpu {
         }
     }
 
-    fn read16(&self, adr: u32) -> u16 {
-        let d0 = self.read8(adr) as u16;
-        let d1 = self.read8(adr + 1) as u16;
+    fn read16(&self, adr: Adr) -> Word {
+        let d0 = self.read8(adr) as Word;
+        let d1 = self.read8(adr + 1) as Word;
         (d0 << 8) | d1
     }
 
-    fn read32(&self, adr: u32) -> u32 {
-        let d0 = self.read8(adr) as u32;
-        let d1 = self.read8(adr + 1) as u32;
-        let d2 = self.read8(adr + 2) as u32;
-        let d3 = self.read8(adr + 3) as u32;
+    fn read32(&self, adr: Adr) -> Long {
+        let d0 = self.read8(adr) as Long;
+        let d1 = self.read8(adr + 1) as Long;
+        let d2 = self.read8(adr + 2) as Long;
+        let d3 = self.read8(adr + 3) as Long;
         (d0 << 24) | (d1 << 16) | (d2 << 8) | d3
     }
 
-    fn write8(&mut self, adr: u32, value: u8) {
+    fn write8(&mut self, adr: Adr, value: Byte) {
         if /*0x000000 <= adr &&*/ adr <= 0xffff {
             self.mem[adr as usize] = value;
         } else {
@@ -260,15 +265,15 @@ impl Cpu {
         }
     }
 
-    fn write32(&mut self, adr: u32, value: u32) {
-        self.write8(adr,     (value >> 24) as u8);
-        self.write8(adr + 1, (value >> 16) as u8);
-        self.write8(adr + 2, (value >>  8) as u8);
-        self.write8(adr + 3,  value        as u8);
+    fn write32(&mut self, adr: Adr, value: Long) {
+        self.write8(adr,     (value >> 24) as Byte);
+        self.write8(adr + 1, (value >> 16) as Byte);
+        self.write8(adr + 2, (value >>  8) as Byte);
+        self.write8(adr + 3,  value        as Byte);
     }
 }
 
-pub fn new_cpu(ipl: Vec<u8>) -> Cpu {
+pub fn new_cpu(ipl: Vec<Byte>) -> Cpu {
     let mut cpu = Cpu{mem: vec![0; 0x10000], ipl: ipl, regs: vec![0; 8 + 8], pc: 0, sr: 0};
     cpu.reset();
     cpu
@@ -277,7 +282,7 @@ pub fn new_cpu(ipl: Vec<u8>) -> Cpu {
 ////////////////////////////////////////////////////////////////
 // disasm
 
-fn disasm(cpu: &Cpu, adr: u32) -> (usize, String) {
+fn disasm(cpu: &Cpu, adr: Adr) -> (usize, String) {
     let op = cpu.read16(adr);
     let inst = &INST[op as usize];
 
@@ -342,7 +347,7 @@ fn disasm(cpu: &Cpu, adr: u32) -> (usize, String) {
     }
 }
 
-fn disasm_read_source16(cpu: &Cpu, adr: u32,  src: usize, m: u16) -> (u32, String) {
+fn disasm_read_source16(cpu: &Cpu, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         7 => {  // Misc.
             match m {
@@ -361,7 +366,7 @@ fn disasm_read_source16(cpu: &Cpu, adr: u32,  src: usize, m: u16) -> (u32, Strin
     }
 }
 
-fn disasm_read_source32(cpu: &Cpu, adr: u32,  src: usize, m: u16) -> (u32, String) {
+fn disasm_read_source32(cpu: &Cpu, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         0 => {  // move.l Dm, xx
             (0, format!("D{}", m))
@@ -383,7 +388,7 @@ fn disasm_read_source32(cpu: &Cpu, adr: u32,  src: usize, m: u16) -> (u32, Strin
     }
 }
 
-fn disasm_write_destination16(_cpu: &Cpu, _adr: u32, dst: usize, n: u16) -> (u32, String) {
+fn disasm_write_destination16(_cpu: &Cpu, _adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
             (0, format!("D{}", n))
@@ -394,7 +399,7 @@ fn disasm_write_destination16(_cpu: &Cpu, _adr: u32, dst: usize, n: u16) -> (u32
     }
 }
 
-fn disasm_write_destination32(_cpu: &Cpu, _adr: u32, dst: usize, n: u16) -> (u32, String) {
+fn disasm_write_destination32(_cpu: &Cpu, _adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
             (0, format!("D{}", n))
