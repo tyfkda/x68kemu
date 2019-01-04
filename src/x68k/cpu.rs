@@ -1,3 +1,4 @@
+use super::bus::{Bus};
 use super::disasm::{disasm};
 use super::opcode::{Opcode, INST};
 use super::types::{Byte, Word, Long, Adr};
@@ -10,9 +11,7 @@ const FLAG_Z: Word = 1 << 2;
 const FLAG_N: Word = 1 << 3;
 
 pub struct Cpu {
-    pub(crate) mem: Vec<Byte>,
-    pub(crate) sram: Vec<Byte>,
-    pub(crate) ipl: Vec<Byte>,
+    pub(crate) bus: Bus,
     pub(crate) a: [Adr; 8],  // Address registers
     pub(crate) d: [Long; 8],  // Data registers
     pub(crate) pc: Adr,
@@ -28,8 +27,8 @@ impl Cpu {
 
     pub fn run(&mut self) {
         loop {
-            let (sz, mnemonic) = disasm(&self, self.pc);
-            println!("{:06x}: {}  {}", self.pc, self.dump_mem(self.pc, sz, 5), mnemonic);
+            let (sz, mnemonic) = disasm(&self.bus, self.pc);
+            println!("{:06x}: {}  {}", self.pc, self.bus.dump_mem(self.pc, sz, 5), mnemonic);
             self.step();
         }
     }
@@ -235,56 +234,18 @@ impl Cpu {
     }
 
     fn read8(&self, adr: Adr) -> Byte {
-        if /*0x000000 <= adr &&*/ adr <= 0xffff {
-            self.mem[adr as usize]
-        } else if 0xed0000 <= adr && adr <= 0xed3fff {
-            self.sram[(adr - 0xed0000) as usize]
-        } else if 0xfe0000 <= adr && adr <= 0xffffff {
-            self.ipl[(adr - 0xfe0000) as usize]
-        } else {
-            panic!("Illegal address: {:08x}", adr);
-        }
+        self.bus.read8(adr)
     }
 
-    pub(crate) fn read16(&self, adr: Adr) -> Word {
-        let d0 = self.read8(adr) as Word;
-        let d1 = self.read8(adr + 1) as Word;
-        (d0 << 8) | d1
+    fn read16(&self, adr: Adr) -> Word {
+        self.bus.read16(adr)
     }
 
-    pub(crate) fn read32(&self, adr: Adr) -> Long {
-        let d0 = self.read8(adr) as Long;
-        let d1 = self.read8(adr + 1) as Long;
-        let d2 = self.read8(adr + 2) as Long;
-        let d3 = self.read8(adr + 3) as Long;
-        (d0 << 24) | (d1 << 16) | (d2 << 8) | d3
-    }
-
-    fn write8(&mut self, adr: Adr, value: Byte) {
-        if /*0x000000 <= adr &&*/ adr <= 0xffff {
-            self.mem[adr as usize] = value;
-        } else if 0xed0000 <= adr && adr <= 0xed3fff {
-            self.sram[(adr - 0xed0000) as usize] = value;
-        } else {
-            panic!("Illegal address: {:08x}", adr);
-        }
+    fn read32(&self, adr: Adr) -> Long {
+        self.bus.read32(adr)
     }
 
     fn write32(&mut self, adr: Adr, value: Long) {
-        self.write8(adr,     (value >> 24) as Byte);
-        self.write8(adr + 1, (value >> 16) as Byte);
-        self.write8(adr + 2, (value >>  8) as Byte);
-        self.write8(adr + 3,  value        as Byte);
-    }
-
-    fn dump_mem(&self, adr: Adr, sz: usize, max: usize) -> String {
-        let arr = (0..max).map(|i| {
-            if i * 2 < sz {
-                format!("{:04x}", self.read16(adr + (i as u32) * 2))
-            } else {
-                String::from("    ")
-            }
-        });
-        arr.collect::<Vec<String>>().join(" ")
+        self.bus.write32(adr, value);
     }
 }
