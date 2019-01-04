@@ -25,30 +25,30 @@ pub(crate) fn disasm(cpu: &Cpu, adr: Adr) -> (usize, String) {
         },
         Opcode::MoveToSrIm => {
             let sr = cpu.read16(adr + 2);
-            (2, format!("move #${:04x}, SR", sr))
+            (4, format!("move #${:04x}, SR", sr))
         },
         Opcode::LeaDirect => {
             let di = ((op >> 9) & 7) as usize;
             let value = cpu.read32(adr + 2);
-            (4, format!("lea ${:08x}.l, A{:?}", value, di))
+            (6, format!("lea ${:08x}.l, A{:?}", value, di))
         },
         Opcode::Reset => {
-            (0, "reset".to_string())
+            (2, "reset".to_string())
         },
         Opcode::AddLong => {
             let di = ((op >> 9) & 7) as usize;
             let si = (op & 7) as usize;
-            (0, format!("add.l D{}, D{}", si, di))
+            (2, format!("add.l D{}, D{}", si, di))
         },
         Opcode::SubaLong => {
             let di = ((op >> 9) & 7) as usize;
             let si = (op & 7) as usize;
-            (0, format!("suba.l A{}, A{}", si, di))
+            (2, format!("suba.l A{}, A{}", si, di))
         },
         Opcode::Dbra => {
             let si = op & 7;
             let ofs = cpu.read16(adr + 2) as i16;
-            (2, format!("dbra D{}, {:06x}", si, (adr + 2).wrapping_add((ofs as i32) as u32)))
+            (4, format!("dbra D{}, {:06x}", si, (adr + 2).wrapping_add((ofs as i32) as u32)))
         },
         Opcode::Bsr => {
             let mut ofs = ((op & 0x00ff) as i8) as i16;
@@ -58,10 +58,10 @@ pub(crate) fn disasm(cpu: &Cpu, adr: Adr) -> (usize, String) {
                 sz = 2;
             }
             let jmp = ((adr + 2) as i32 + ofs as i32) as u32;
-            (sz, format!("bsr ${:06x}", jmp))
+            (2 + sz, format!("bsr ${:06x}", jmp))
         },
         _ => {
-            eprintln!("{:08x}: {:04x}  ; Unknown opcode", adr, op);
+            eprintln!("{:06x}: {:04x}  ; Unknown opcode", adr, op);
             panic!("Not implemented");
         },
     }

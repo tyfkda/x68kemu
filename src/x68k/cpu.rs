@@ -23,8 +23,8 @@ impl Cpu {
 
     pub fn run(&mut self) {
         loop {
-            let (_sz, mnemonic) = disasm(&self, self.pc);
-            println!("{:08x}: {}", self.pc, mnemonic);
+            let (sz, mnemonic) = disasm(&self, self.pc);
+            println!("{:06x}: {}  {}", self.pc, self.dump_mem(self.pc, sz, 5), mnemonic);
             self.step();
         }
     }
@@ -171,6 +171,18 @@ impl Cpu {
                 self.write32(adr, value);
                 self.regs[n + AREG] = adr + 4;
             },
+            7 => {
+                match n {
+                    1 => {
+                        let d = self.read32(self.pc);
+                        self.pc += 4;
+                        self.write32(d, value);
+                    },
+                    _ => {
+                        panic!("Not implemented, n={}", n);
+                    },
+                }
+            },
             _ => {
                 panic!("Not implemented, dst={}", dst);
             },
@@ -212,5 +224,16 @@ impl Cpu {
         self.write8(adr + 1, (value >> 16) as Byte);
         self.write8(adr + 2, (value >>  8) as Byte);
         self.write8(adr + 3,  value        as Byte);
+    }
+
+    fn dump_mem(&self, adr: Adr, sz: usize, max: usize) -> String {
+        let arr = (0..max).map(|i| {
+            if i * 2 < sz {
+                format!("{:04x}", self.read16(adr + (i as u32) * 2))
+            } else {
+                String::from("    ")
+            }
+        });
+        arr.collect::<Vec<String>>().join(" ")
     }
 }
