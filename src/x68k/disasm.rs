@@ -3,6 +3,18 @@ use super::cpu::{get_branch_offset};
 use super::opcode::{Opcode, INST};
 use super::types::{Word, Adr};
 
+const DREG_NAMES: [&str; 8] = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7"];
+const AREG_NAMES: [&str; 8] = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"];
+const AINDIRECT_NAMES: [&str; 8] = ["(A0)", "(A1)", "(A2)", "(A3)", "(A4)", "(A5)", "(A6)", "(A7)"];
+const APOSTINC_NAMES: [&str; 8] = ["(A0)+", "(A1)+", "(A2)+", "(A3)+", "(A4)+", "(A5)+", "(A6)+", "(A7)+"];
+const APREDEC_NAMES: [&str; 8] = ["-(A0)", "-(A1)", "-(A2)", "-(A3)", "-(A4)", "-(A5)", "-(A6)", "-(A7)"];
+
+fn dreg(no: Word) -> String { DREG_NAMES[no as usize].to_string() }
+fn areg(no: Word) -> String { AREG_NAMES[no as usize].to_string() }
+fn aindname(no: Word) -> String { AINDIRECT_NAMES[no as usize].to_string() }
+fn apostinc(no: Word) -> String { APOSTINC_NAMES[no as usize].to_string() }
+fn apredec(no: Word) -> String { APREDEC_NAMES[no as usize].to_string() }
+
 pub(crate) fn disasm(bus: &Bus, adr: Adr) -> (usize, String) {
     let op = bus.read16(adr);
     let inst = &INST[op as usize];
@@ -42,12 +54,12 @@ pub(crate) fn disasm(bus: &Bus, adr: Adr) -> (usize, String) {
         Opcode::MovemFrom => {
             let di = op & 7;
             let bits = bus.read16(adr + 2);
-            (4, format!("movem.l #{:04x}, -(A{})", bits, di))  // TODO: Print registers.
+            (4, format!("movem.l #{:04x}, {}", bits, apredec(di)))  // TODO: Print registers.
         },
         Opcode::MovemTo => {
             let di = op & 7;
             let bits = bus.read16(adr + 2);
-            (4, format!("movem.l (A{})+, #{:04x}", bits, di))  // TODO: Print registers.
+            (4, format!("movem.l (A{})+, #{:04x}", apostinc(di), bits))  // TODO: Print registers.
         },
         Opcode::MoveToSrIm => {
             let sr = bus.read16(adr + 2);
@@ -146,10 +158,10 @@ pub(crate) fn disasm(bus: &Bus, adr: Adr) -> (usize, String) {
 fn disasm_read_source8(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         0 => {  // move.b Dm, xx
-            (0, format!("D{}", m))
+            (0, dreg(m))
         },
         3 => {  // move.b (Am)+, xx
-            (0, format!("(A{})+", m))
+            (0, apostinc(m))
         },
         7 => {  // Misc.
             match m {
@@ -175,7 +187,7 @@ fn disasm_read_source8(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, Strin
 fn disasm_read_source16(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         0 => {  // move.w Dm, xx
-            (0, format!("D{}", m))
+            (0, dreg(m))
         },
         7 => {  // Misc.
             match m {
@@ -197,16 +209,16 @@ fn disasm_read_source16(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, Stri
 fn disasm_read_source32(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         0 => {  // move.l Dm, xx
-            (0, format!("D{}", m))
+            (0, dreg(m))
         },
         1 => {  // move.l Am, xx
-            (0, format!("A{}", m))
+            (0, areg(m))
         },
         2 => {  // move.l (Am), xx
-            (0, format!("(A{})", m))
+            (0, aindname(m))
         },
         3 => {  // move.l (Am)+, xx
-            (0, format!("(A{})+", m))
+            (0, apostinc(m))
         },
         7 => {  // Misc.
             match m {
@@ -228,10 +240,10 @@ fn disasm_read_source32(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, Stri
 fn disasm_write_destination8(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
-            (0, format!("D{}", n))
+            (0, dreg(n))
         },
         3 => {
-            (0, format!("(A{})+", n))
+            (0, apostinc(n))
         },
         7 => {
             match n {
@@ -253,13 +265,13 @@ fn disasm_write_destination8(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32, 
 fn disasm_write_destination16(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
-            (0, format!("D{}", n))
+            (0, dreg(n))
         },
         1 => {  // move.w xx, An
-            (0, format!("A{}", n))
+            (0, areg(n))
         },
         3 => {
-            (0, format!("(A{})+", n))
+            (0, apostinc(n))
         },
         7 => {
             match n {
@@ -281,13 +293,13 @@ fn disasm_write_destination16(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32,
 fn disasm_write_destination32(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
-            (0, format!("D{}", n))
+            (0, dreg(n))
         },
         1 => {  // move.l xx, An
-            (0, format!("A{}", n))
+            (0, areg(n))
         },
         3 => {
-            (0, format!("(A{})+", n))
+            (0, apostinc(n))
         },
         7 => {
             match n {
