@@ -1,7 +1,7 @@
 use super::bus::{Bus};
 use super::disasm::{disasm};
 use super::opcode::{Opcode, INST};
-use super::types::{Byte, Word, Long, Adr};
+use super::types::{Byte, Word, Long, SWord, SLong, Adr};
 
 const SP: usize = 7;  // Stack pointer = A7 register.
 
@@ -100,6 +100,25 @@ impl Cpu {
                 }
                 self.a[di] = p;
             },
+            Opcode::MovemTo => {
+                let si = (op & 7) as usize;
+                let bits = self.read16(self.pc);
+                self.pc += 2;
+                let mut p = self.a[si];
+                for i in 0..8 {
+                    if (bits & (0x8000 >> i)) != 0 {
+                        self.d[i] = self.read32(p);
+                        p += 4;
+                    }
+                }
+                for i in 0..8 {
+                    if (bits & (0x0080 << i)) != 0 {
+                        self.a[i] = self.read32(p);
+                        p += 4;
+                    }
+                }
+                self.a[si] = p;
+            },
             Opcode::MoveToSrIm => {
                 self.sr = self.read16(self.pc);
                 self.pc += 2;
@@ -148,6 +167,25 @@ impl Cpu {
                 }
                 self.sr = (self.sr & 0xff00) | c;
             },
+            Opcode::TstWord => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let val = self.read_source16(st, si) as SWord;
+
+                let mut sr = self.sr;
+                if val == 0 {
+                    sr |= FLAG_Z;
+                } else {
+                    sr &= !FLAG_Z;
+                }
+                if val < 0 {
+                    sr |= FLAG_N;
+                } else {
+                    sr &= !FLAG_N;
+                }
+                sr &= !(FLAG_V | FLAG_C);
+                self.sr = sr;
+            },
             Opcode::Reset => {
                 // TODO: Implement.
             },
@@ -178,11 +216,13 @@ impl Cpu {
             },
             Opcode::BranchCond => {
                 let (ofs, sz) = get_branch_offset(op, &self.bus, self.pc);
-                let mut newpc = self.pc + sz;
-                if (self.sr & FLAG_Z) == 0 {
-                    newpc = ((startadr + 2) as i32 + ofs as i32) as u32;
-                }
-                self.pc = newpc;
+                let nextpc = self.pc + sz;
+                let cond = match op >> 8 {
+                    0x66 => { (self.sr & FLAG_Z) == 0 },
+                    0x67 => { (self.sr & FLAG_Z) != 0 },
+                    _ => { panic!("Illegal"); },
+                };
+                self.pc = if cond { (nextpc as i32 + ofs as i32) as u32 } else { nextpc };
             },
             Opcode::Dbra => {
                 let si = (op & 7) as usize;
@@ -201,6 +241,18 @@ impl Cpu {
                 self.pc += sz;
                 self.push32(self.pc);
                 self.pc = ((startadr + 2) as i32 + ofs as i32) as u32;
+            },
+            Opcode::JsrA => {
+                let di = (op & 7) as usize;
+                let adr = if (op & 15) < 8 {
+                    self.a[di]
+                } else {
+                    let offset = self.read16(self.pc);
+                    self.pc += 2;
+                    panic!("Not implemented: JSR (${:04x}, A{})", offset, di);
+                };
+                self.push32(self.pc);
+                self.pc = adr;
             },
             Opcode::Rts => {
                 self.pc = self.pop32();
@@ -268,6 +320,11 @@ impl Cpu {
         match src {
             0 => {  // move.l Dm, xx
                 self.d[m] as u16
+            },
+            5 => {  // move.l (123, Am), xx
+                let ofs = self.read16(self.pc) as SWord;
+                self.pc += 2;
+                self.read16((self.a[m] as SLong + ofs as SLong) as Adr)
             },
             7 => {  // Misc.
                 match m {
@@ -363,6 +420,11 @@ impl Cpu {
                 self.write16(adr, value);
                 self.a[n] = adr + 2;
             },
+            5 => {  // move.l xx, (123, An)
+                let ofs = self.read16(self.pc) as SWord;
+                self.pc += 2;
+                self.write16((self.a[n] as SLong + ofs as SLong) as Adr, value);
+            },
             7 => {
                 match n {
                     1 => {
@@ -393,6 +455,11 @@ impl Cpu {
                 let adr = self.a[n];
                 self.write32(adr, value);
                 self.a[n] = adr + 4;
+            },
+            5 => {  // move.l xx, (123, An)
+                let ofs = self.read16(self.pc) as SWord;
+                self.pc += 2;
+                self.write32((self.a[n] as SLong + ofs as SLong) as Adr, value);
             },
             7 => {
                 match n {

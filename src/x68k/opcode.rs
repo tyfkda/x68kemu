@@ -15,6 +15,7 @@ pub(crate) enum Opcode {
     LeaDirect,           // lea $xxxxxxxx, Ax
     Clr,                 // clr xx
     CmpmByte,            // cmpm.b (Am)+, (An)+
+    TstWord,             // tst.w xx
     Reset,               // reset
     AddLong,             // add.l XX, Dd
     AddaLong,            // adda.l XX, Ad
@@ -23,6 +24,7 @@ pub(crate) enum Opcode {
     BranchCond,          // bxx $xxxx
     Dbra,                // dbra $xxxx
     Bsr,                 // bsr $xxxx
+    JsrA,                // jsr (Ax) or jsr ($ooo, Ax)
     Rts,                 // rts
     Trap,                // trap #x
 }
@@ -65,11 +67,14 @@ lazy_static! {
         mask_inst(&mut m, 0xffc0, 0x4240, &Inst {op: Opcode::Clr});  // 4240-427f
         mask_inst(&mut m, 0xffc0, 0x4280, &Inst {op: Opcode::Clr});  // 4280-42bf
         mask_inst(&mut m, 0xfff8, 0x48e0, &Inst {op: Opcode::MovemFrom});  // 48e0-48e7
+        mask_inst(&mut m, 0xffc0, 0x4a40, &Inst {op: Opcode::TstWord});  // 4a40-4a7f
         mask_inst(&mut m, 0xfff8, 0x4cd8, &Inst {op: Opcode::MovemTo});  // 4cd8-4cdf
         mask_inst(&mut m, 0xfff0, 0x4e40, &Inst {op: Opcode::Trap});  // 4e40-4e4f
         mask_inst(&mut m, 0xfff8, 0x51c8, &Inst {op: Opcode::Dbra});  // 51c8-51cf
         mask_inst(&mut m, 0xff00, 0x6100, &Inst {op: Opcode::Bsr});  // 6100-61ff
-        mask_inst(&mut m, 0xff00, 0x6600, &Inst {op: Opcode::BranchCond});  // 6600-66ff
+        mask_inst(&mut m, 0xfff0, 0x4e90, &Inst {op: Opcode::JsrA});  // 4e90-4e9f
+        mask_inst(&mut m, 0xff00, 0x6600, &Inst {op: Opcode::BranchCond});  // 6600-66ff: bne
+        mask_inst(&mut m, 0xff00, 0x6700, &Inst {op: Opcode::BranchCond});  // 6700-67ff: beq
         mask_inst(&mut m, 0xf100, 0x7000, &Inst {op: Opcode::Moveq});  // 7000...70ff, 7200...72ff, ..., 7eff
         mask_inst(&mut m, 0xf1c0, 0x91c0, &Inst {op: Opcode::SubaLong});  // 91c0, 91c1, 93c0, ..., 9fff
         mask_inst(&mut m, 0xf1f8, 0xb108, &Inst {op: Opcode::CmpmByte});  // b108, b109, b308, ..., bf0f
