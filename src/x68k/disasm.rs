@@ -22,7 +22,7 @@ pub(crate) fn disasm(bus: &Bus, adr: Adr) -> (usize, String) {
             let dt = ((op >> 6) & 7) as usize;
             let (ssz, sstr) = disasm_read_source32(bus, adr + 2, ((op >> 3) & 7) as usize, m);
             let (dsz, dstr) = disasm_write_destination32(bus, adr + 2 + ssz, dt, n);
-            ((2 + ssz + dsz) as usize, format!("move.l {}, {}", sstr, dstr))
+            ((2 + ssz + dsz) as usize, format!("move.l {}, {}", sstr, dstr))  // TODO: Use movea for a-regs.
         },
         Opcode::MoveWord => {
             let n = (op >> 9) & 7;
@@ -38,6 +38,16 @@ pub(crate) fn disasm(bus: &Bus, adr: Adr) -> (usize, String) {
             let val = if v < 0x80 { v as i16 } else { -256 + v as i16 };
             //d[di].l = val;
             (2, format!("moveq #{}, D{}", val, di))
+        },
+        Opcode::MovemFrom => {
+            let di = op & 7;
+            let bits = bus.read16(adr + 2);
+            (4, format!("movem.l #{:04x}, -(A{})", bits, di))  // TODO: Print registers.
+        },
+        Opcode::MovemTo => {
+            let di = op & 7;
+            let bits = bus.read16(adr + 2);
+            (4, format!("movem.l (A{})+, #{:04x}", bits, di))  // TODO: Print registers.
         },
         Opcode::MoveToSrIm => {
             let sr = bus.read16(adr + 2);
@@ -79,18 +89,35 @@ pub(crate) fn disasm(bus: &Bus, adr: Adr) -> (usize, String) {
         },
         Opcode::AddLong => {
             let di = ((op >> 9) & 7) as usize;
-            let si = (op & 7) as usize;
-            (2, format!("add.l D{}, D{}", si, di))
+            let st = ((op >> 3) & 7) as usize;
+            let si = op & 7;
+            let (ssz, sstr) = disasm_read_source32(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("add.l {}, D{}", sstr, di))
+        },
+        Opcode::AddaLong => {
+            let di = ((op >> 9) & 7) as usize;
+            let st = ((op >> 3) & 7) as usize;
+            let si = op & 7;
+            let (ssz, sstr) = disasm_read_source32(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("adda.l {}, A{}", sstr, di))
         },
         Opcode::SubaLong => {
             let di = ((op >> 9) & 7) as usize;
-            let si = (op & 7) as usize;
-            (2, format!("suba.l A{}, A{}", si, di))
+            let st = ((op >> 3) & 7) as usize;
+            let si = op & 7;
+            let (ssz, sstr) = disasm_read_source32(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("suba.l {}, A{}", sstr, di))
+        },
+        Opcode::AndLong => {
+            let n = (op >> 9) & 7;
+            let m = op & 7;
+            let (ssz, sstr) = disasm_read_source32(bus, adr + 2, ((op >> 3) & 7) as usize, m);
+            ((2 + ssz) as usize, format!("and.l {}, D{}", sstr, n))
         },
         Opcode::BranchCond => {
             let (ofs, sz) = get_branch_offset(op, bus, adr + 2);
             let jmp = ((adr + 2) as i32 + ofs as i32) as u32;
-            (2 + sz as usize, format!("bne ${:06x}", jmp))
+            ((2 + sz) as usize, format!("bne ${:06x}", jmp))
         },
         Opcode::Dbra => {
             let si = op & 7;
@@ -100,10 +127,14 @@ pub(crate) fn disasm(bus: &Bus, adr: Adr) -> (usize, String) {
         Opcode::Bsr => {
             let (ofs, sz) = get_branch_offset(op, bus, adr + 2);
             let jmp = ((adr + 2) as i32 + ofs as i32) as u32;
-            (2 + sz as usize, format!("bsr ${:06x}", jmp))
+            ((2 + sz) as usize, format!("bsr ${:06x}", jmp))
         },
         Opcode::Rts => {
             (2, String::from("rts"))
+        },
+        Opcode::Trap => {
+            let no = op & 0x000f;
+            (2, format!("trap #{}", no))
         },
         _ => {
             eprintln!("{:06x}: {:04x}  ; Unknown opcode", adr, op);
@@ -143,6 +174,9 @@ fn disasm_read_source8(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, Strin
 
 fn disasm_read_source16(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
+        0 => {  // move.w Dm, xx
+            (0, format!("D{}", m))
+        },
         7 => {  // Misc.
             match m {
                 4 => {  // move.w #$XXXX, xx
@@ -167,6 +201,9 @@ fn disasm_read_source32(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, Stri
         },
         1 => {  // move.l Am, xx
             (0, format!("A{}", m))
+        },
+        2 => {  // move.l (Am), xx
+            (0, format!("(A{})", m))
         },
         3 => {  // move.l (Am)+, xx
             (0, format!("(A{})+", m))
@@ -218,6 +255,9 @@ fn disasm_write_destination16(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32,
         0 => {
             (0, format!("D{}", n))
         },
+        1 => {  // move.w xx, An
+            (0, format!("A{}", n))
+        },
         3 => {
             (0, format!("(A{})+", n))
         },
@@ -242,6 +282,9 @@ fn disasm_write_destination32(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32,
     match dst {
         0 => {
             (0, format!("D{}", n))
+        },
+        1 => {  // move.l xx, An
+            (0, format!("A{}", n))
         },
         3 => {
             (0, format!("(A{})+", n))

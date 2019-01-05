@@ -10,6 +10,8 @@ const FLAG_V: Word = 1 << 1;
 const FLAG_Z: Word = 1 << 2;
 const FLAG_N: Word = 1 << 3;
 
+const TRAP_VECTOR_START: Adr = 0x0080;
+
 pub struct Cpu {
     pub(crate) bus: Bus,
     pub(crate) a: [Adr; 8],  // Address registers
@@ -67,6 +69,25 @@ impl Cpu {
                 let val = if v < 0x80 { v as i16 } else { -256 + v as i16 };
                 self.d[di as usize] = (val as i32) as u32;
             },
+            Opcode::MovemFrom => {
+                let di = (op & 7) as usize;
+                let bits = self.read16(self.pc);
+                self.pc += 2;
+                let mut p = self.a[di];
+                for i in 0..8 {
+                    if (bits & (0x0001 << i)) != 0 {
+                        p -= 4;
+                        self.write32(p, self.a[7 - i]);
+                    }
+                }
+                for i in 0..8 {
+                    if (bits & (0x0100 << i)) != 0 {
+                        p -= 4;
+                        self.write32(p, self.d[7 - i]);
+                    }
+                }
+                self.a[di] = p;
+            },
             Opcode::MoveToSrIm => {
                 self.sr = self.read16(self.pc);
                 self.pc += 2;
@@ -120,13 +141,28 @@ impl Cpu {
             },
             Opcode::AddLong => {
                 let di = ((op >> 9) & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
                 let si = (op & 7) as usize;
-                self.d[di] = self.d[di].wrapping_add(self.d[si]);
+                let src = self.read_source32(st, si);
+                self.d[di] = self.d[di].wrapping_add(src);
+            },
+            Opcode::AddaLong => {
+                let di = ((op >> 9) & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let si = (op & 7) as usize;
+                let src = self.read_source32(st, si);
+                self.a[di] = self.a[di].wrapping_add(src);
             },
             Opcode::SubaLong => {
                 let di = ((op >> 9) & 7) as usize;
                 let si = (op & 7) as usize;
                 self.a[di] -= self.a[si];
+            },
+            Opcode::AndLong => {
+                let n = ((op >> 9) & 7) as usize;
+                let m = (op & 7) as usize;
+                let src = self.read_source32(((op >> 3) & 7) as usize, m);
+                self.d[n] &= src;
             },
             Opcode::BranchCond => {
                 let (ofs, sz) = get_branch_offset(op, &self.bus, self.pc);
@@ -156,6 +192,13 @@ impl Cpu {
             },
             Opcode::Rts => {
                 self.pc = self.pop32();
+            },
+            Opcode::Trap => {
+                let no = op & 0x000f;
+                // TODO: Move to super visor mode.
+                let adr = self.read32(TRAP_VECTOR_START + (no * 4) as u32);
+                self.push32(self.pc);
+                self.pc = adr;
             },
             _ => {
                 eprintln!("{:08x}: {:04x}  ; Unknown opcode", startadr, op);
@@ -211,6 +254,9 @@ impl Cpu {
 
     fn read_source16(&mut self, src: usize, m: usize) -> u16 {
         match src {
+            0 => {  // move.l Dm, xx
+                self.d[m] as u16
+            },
             7 => {  // Misc.
                 match m {
                     4 => {  // move.w #$XXXX, xx
@@ -236,6 +282,10 @@ impl Cpu {
             },
             1 => {  // move.l Am, xx
                 self.a[m]
+            },
+            2 => {  // move.l (Am), xx
+                let adr = self.a[m];
+                self.read32(adr)
             },
             3 => {  // move.l (Am)+, xx
                 let adr = self.a[m];
@@ -293,6 +343,9 @@ impl Cpu {
             0 => {
                 self.d[n] = (self.d[n] & 0xffff0000) | (value as u32);
             },
+            1 => {
+                self.a[n] = (self.a[n] & 0xffff0000) | (value as u32);
+            },
             3 => {
                 let adr = self.a[n];
                 self.write16(adr, value);
@@ -320,6 +373,9 @@ impl Cpu {
         match dst {
             0 => {
                 self.d[n] = value;
+            },
+            1 => {
+                self.a[n] = value;
             },
             3 => {
                 let adr = self.a[n];
