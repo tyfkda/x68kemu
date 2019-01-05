@@ -1,12 +1,20 @@
 use super::types::{Byte, Word, Long, Adr};
 
 pub struct Bus {
-    pub mem: Vec<Byte>,
-    pub sram: Vec<Byte>,
-    pub ipl: Vec<Byte>,
+    mem: Vec<Byte>,
+    sram: Vec<Byte>,
+    ipl: Vec<Byte>,
 }
 
 impl Bus {
+    pub fn new(ipl: Vec<Byte>) -> Bus {
+        Bus {
+            mem: vec![0; 0x10000],
+            sram: vec![0; 0x4000],
+            ipl: ipl,
+        }
+    }
+
     pub fn read8(&self, adr: Adr) -> Byte {
         if /*0x000000 <= adr &&*/ adr <= 0xffff {
             self.mem[adr as usize]

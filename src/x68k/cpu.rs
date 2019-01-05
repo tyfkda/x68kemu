@@ -13,14 +13,26 @@ const FLAG_N: Word = 1 << 3;
 const TRAP_VECTOR_START: Adr = 0x0080;
 
 pub struct Cpu {
-    pub(crate) bus: Bus,
-    pub(crate) a: [Adr; 8],  // Address registers
-    pub(crate) d: [Long; 8],  // Data registers
-    pub(crate) pc: Adr,
-    pub(crate) sr: Word,
+    bus: Bus,
+    a: [Adr; 8],  // Address registers
+    d: [Long; 8],  // Data registers
+    pc: Adr,
+    sr: Word,
 }
 
 impl Cpu {
+    pub fn new(bus: Bus) -> Cpu {
+        let mut cpu = Cpu {
+            bus: bus,
+            a: [0; 8],
+            d: [0; 8],
+            pc: 0,
+            sr: 0,
+        };
+        cpu.reset();
+        cpu
+    }
+
     pub fn reset(&mut self) {
         self.sr = 0;
         self.a[SP] = self.read32(0xff0000);
