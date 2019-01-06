@@ -1,7 +1,7 @@
 use super::bus_trait::{BusTrait};
 use super::cpu::{get_branch_offset};
 use super::opcode::{Opcode, INST};
-use super::super::types::{Word, SWord, Adr};
+use super::super::types::{Word, Long, SWord, SLong, Adr};
 
 const DREG_NAMES: [&str; 8] = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7"];
 const AREG_NAMES: [&str; 8] = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"];
@@ -25,33 +25,36 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
 
     match inst.op {
         Opcode::MoveByte => {
-            let n = (op >> 9) & 7;
-            let m = op & 7;
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
             let dt = ((op >> 6) & 7) as usize;
-            let (ssz, sstr) = read_source8(bus, adr + 2, ((op >> 3) & 7) as usize, m);
-            let (dsz, dstr) = write_destination8(bus, adr + 2 + ssz, dt, n);
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source8(bus, adr + 2, st, si);
+            let (dsz, dstr) = write_destination8(bus, adr + 2 + ssz, dt, di);
             ((2 + ssz + dsz) as usize, format!("move.b {}, {}", sstr, dstr))
         },
         Opcode::MoveLong => {
-            let n = (op >> 9) & 7;
-            let m = op & 7;
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
             let dt = ((op >> 6) & 7) as usize;
-            let (ssz, sstr) = read_source32(bus, adr + 2, ((op >> 3) & 7) as usize, m);
-            let (dsz, dstr) = write_destination32(bus, adr + 2 + ssz, dt, n);
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source32(bus, adr + 2, st, si);
+            let (dsz, dstr) = write_destination32(bus, adr + 2 + ssz, dt, di);
             ((2 + ssz + dsz) as usize, format!("move.l {}, {}", sstr, dstr))  // TODO: Use movea for a-regs.
         },
         Opcode::MoveWord => {
-            let n = (op >> 9) & 7;
-            let m = op & 7;
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
             let dt = ((op >> 6) & 7) as usize;
-            let (ssz, sstr) = read_source16(bus, adr + 2, ((op >> 3) & 7) as usize, m);
-            let (dsz, dstr) = write_destination16(bus, adr + 2 + ssz, dt, n);
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
+            let (dsz, dstr) = write_destination16(bus, adr + 2 + ssz, dt, di);
             ((2 + ssz + dsz) as usize, format!("move.w {}, {}", sstr, dstr))
         },
         Opcode::Moveq => {
-            let di = (op >> 9) & 7;
             let v = op & 0xff;
-            let val = if v < 0x80 { v as i16 } else { -256 + v as i16 };
+            let di = (op >> 9) & 7;
+            let val = if v < 0x80 { v as SWord } else { -256 + v as SWord };
             (2, format!("moveq #{}, {}", val, dreg(di)))
         },
         Opcode::MovemFrom => {
@@ -64,13 +67,13 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             (4, format!("movem.l {}, {}", regs, apredec(di)))
         },
         Opcode::MovemTo => {
-            let di = op & 7;
+            let si = op & 7;
             let bits = bus.read16(adr + 2);
             let regs = (0..16)
                 .filter(|i| { (bits & ((1 as u16) << i)) != 0 })
                 .map(|i| { MOVEM_NAMES[i] })
                 .collect::<Vec<&str>>().join("/");
-            (4, format!("movem.l {}, {}", apostinc(di), regs))
+            (4, format!("movem.l {}, {}", apostinc(si), regs))
         },
         Opcode::MoveToSrIm => {
             let sr = bus.read16(adr + 2);
@@ -81,20 +84,31 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let value = bus.read32(adr + 2);
             (6, format!("lea ${:08x}.l, {}", value, areg(di)))
         },
+        Opcode::LeaOffset => {
+            let si = op & 7;
+            let di = (op >> 9) & 7;
+            let ofs = bus.read16(adr + 2) as SWord;
+            (4, format!("lea ({}, {}), {}", ofs, areg(si), areg(di)))
+        },
+        Opcode::LeaOffsetPc => {
+            let di = (op >> 9) & 7;
+            let ofs = bus.read16(adr + 2) as SWord;
+            (4, format!("lea ({}, PC), {}", ofs, areg(di)))
+        },
         Opcode::Clr => {
+            let di = op & 7;
             let dt = ((op >> 3) & 7) as usize;
-            let n = op & 7;
             match op & 0xffc0 {
                 0x4200 => {  // byte
-                    let (dsz, dstr) = write_destination16(bus, adr + 2, dt, n);
+                    let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
                     ((2 + dsz) as usize, format!("clr.b {}", dstr))
                 },
                 0x4240 => {  // word
-                    let (dsz, dstr) = write_destination16(bus, adr + 2, dt, n);
+                    let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
                     ((2 + dsz) as usize, format!("clr.w {}", dstr))
                 },
                 0x4280 => {  // long
-                    let (dsz, dstr) = write_destination16(bus, adr + 2, dt, n);
+                    let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
                     ((2 + dsz) as usize, format!("clr.l {}", dstr))
                 },
                 _ => {
@@ -113,59 +127,79 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
             ((2 + ssz) as usize, format!("tst.w {}", sstr))
         },
+        Opcode::TstLong => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("tst.l {}", sstr))
+        },
         Opcode::Reset => {
             (2, "reset".to_string())
         },
         Opcode::AddLong => {
-            let di = (op >> 9) & 7;
-            let st = ((op >> 3) & 7) as usize;
             let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
             let (ssz, sstr) = read_source32(bus, adr + 2, st, si);
             ((2 + ssz) as usize, format!("add.l {}, {}", sstr, dreg(di)))
         },
         Opcode::AddaLong => {
-            let di = (op >> 9) & 7;
-            let st = ((op >> 3) & 7) as usize;
             let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
             let (ssz, sstr) = read_source32(bus, adr + 2, st, si);
             ((2 + ssz) as usize, format!("adda.l {}, {}", sstr, areg(di)))
         },
+        Opcode::AddqLong => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let v = (((op >> 9) & 7).wrapping_sub(1) & 7) + 1;
+            let (dsz, dstr) = write_destination32(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("addq.l #{}, {}", v, dstr))
+        },
         Opcode::SubaLong => {
-            let di = (op >> 9) & 7;
-            let st = ((op >> 3) & 7) as usize;
             let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
             let (ssz, sstr) = read_source32(bus, adr + 2, st, si);
             ((2 + ssz) as usize, format!("suba.l {}, {}", sstr, areg(di)))
         },
+        Opcode::SubqWord => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let v = (((op >> 9) & 7).wrapping_sub(1) & 7) + 1;
+            let (dsz, dstr) = write_destination32(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("subq.w #{}, {}", v, dstr))
+        },
         Opcode::AndLong => {
-            let n = (op >> 9) & 7;
-            let m = op & 7;
-            let (ssz, sstr) = read_source32(bus, adr + 2, ((op >> 3) & 7) as usize, m);
-            ((2 + ssz) as usize, format!("and.l {}, {}", sstr, dreg(n)))
+            let si = op & 7;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source32(bus, adr + 2, ((op >> 3) & 7) as usize, si);
+            ((2 + ssz) as usize, format!("and.l {}, {}", sstr, dreg(di)))
         },
         Opcode::BranchCond => {
             let (ofs, sz) = get_branch_offset(op, bus, adr + 2);
-            let jmp = ((adr + 2) as i32 + ofs as i32) as u32;
+            let jmp = ((adr + 2) as SLong + ofs as SLong) as Long;
             let bt = (op >> 8) - 0x66;
             ((2 + sz) as usize, format!("{} ${:06x}", bcond(bt), jmp))
         },
         Opcode::Dbra => {
             let si = op & 7;
-            let ofs = bus.read16(adr + 2) as i16;
-            (4, format!("dbra D{}, ${:06x}", si, (adr + 2).wrapping_add((ofs as i32) as u32)))
+            let ofs = bus.read16(adr + 2) as SWord;
+            (4, format!("dbra D{}, ${:06x}", si, ((adr + 2) as SLong).wrapping_add(ofs as SLong) as Long))
         },
         Opcode::Bsr => {
             let (ofs, sz) = get_branch_offset(op, bus, adr + 2);
-            let jmp = ((adr + 2) as i32 + ofs as i32) as u32;
+            let jmp = ((adr + 2) as SLong + ofs as SLong) as Long;
             ((2 + sz) as usize, format!("bsr ${:06x}", jmp))
         },
         Opcode::JsrA => {
-            let di = (op & 7) as usize;
+            let si = op & 7;
             if (op & 15) < 8 {
-                (2, format!("jsr (A{})", di))
+                (2, format!("jsr ({})", areg(si)))
             } else {
                 let offset = bus.read16(adr + 2);
-                (4, format!("jsr (${:04x}, A{})", offset, di))
+                (4, format!("jsr (${:04x}, {})", offset, areg(si)))
             }
         },
         Opcode::Rts => {
@@ -200,12 +234,12 @@ fn read_source8<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> (
                     (2, format!("#${:04x}", value))
                 },
                 _ => {
-                    panic!("Not implemented, m={}", m);
+                    (0, format!("UnhandledSrc(7/{})", m))
                 },
             }
         },
         _ => {
-            panic!("Not implemented, src={}", src);
+            (0, format!("UnhandledSrc({})", src))
         },
     }
 }
@@ -215,23 +249,30 @@ fn read_source16<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> 
         0 => {  // move.w Dm, xx
             (0, dreg(m))
         },
+        2 => {  // move.l (Am), xx
+            (0, aindname(m))
+        },
         5 => {  // move.l (123, An), xx
             let ofs = bus.read16(adr) as SWord;
             (2, format!("({}, {})", ofs, areg(m)))
         },
         7 => {  // Misc.
             match m {
+                1 => {  // move.b $XXXXXXXX.l, xx
+                    let adr = bus.read32(adr);
+                    (4, format!("${:08x}", adr))
+                },
                 4 => {  // move.w #$XXXX, xx
                     let value = bus.read16(adr);
                     (2, format!("#${:04x}", value))
                 },
                 _ => {
-                    panic!("Not implemented, m={}", m);
+                    (0, format!("UnhandledSrc(7/{})", m))
                 },
             }
         },
         _ => {
-            panic!("Not implemented, src={}", src);
+            (0, format!("UnhandledSrc({})", src))
         },
     }
 }
@@ -250,19 +291,27 @@ fn read_source32<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> 
         3 => {  // move.l (Am)+, xx
             (0, apostinc(m))
         },
+        5 => {  // move.l (123,Am), xx
+            let ofs = bus.read16(adr) as SWord;
+            (2, format!("({}, {})", ofs, areg(m)))
+        },
         7 => {  // Misc.
             match m {
+                1 => {  // move.b $XXXXXXXX.l, xx
+                    let adr = bus.read32(adr);
+                    (4, format!("${:08x}", adr))
+                },
                 4 => {  // move.l #$XXXX, xx
                     let value = bus.read32(adr);
                     (4, format!("#${:08x}", value))
                 },
                 _ => {
-                    panic!("Not implemented, m={}", m);
+                    (0, format!("UnhandledSrc(7/{})", m))
                 },
             }
         },
         _ => {
-            panic!("Not implemented, src={}", src);
+            (0, format!("UnhandledSrc({})", src))
         },
     }
 }

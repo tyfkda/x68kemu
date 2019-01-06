@@ -55,29 +55,32 @@ impl <BusT: BusTrait> Cpu<BusT> {
 
         match inst.op {
             Opcode::MoveByte => {
-                let n = ((op >> 9) & 7) as usize;
-                let m = (op & 7) as usize;
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
                 let dt = ((op >> 6) & 7) as usize;
-                let src = self.read_source8(((op >> 3) & 7) as usize, m);
-                self.write_destination8(dt, n, src);
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source8(st, si);
+                self.write_destination8(dt, di, src);
             },
             Opcode::MoveLong => {
-                let n = ((op >> 9) & 7) as usize;
-                let m = (op & 7) as usize;
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
                 let dt = ((op >> 6) & 7) as usize;
-                let src = self.read_source32(((op >> 3) & 7) as usize, m);
-                self.write_destination32(dt, n, src);
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source32(st, si);
+                self.write_destination32(dt, di, src);
             },
             Opcode::MoveWord => {
-                let n = ((op >> 9) & 7) as usize;
-                let m = (op & 7) as usize;
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
                 let dt = ((op >> 6) & 7) as usize;
-                let src = self.read_source16(((op >> 3) & 7) as usize, m);
-                self.write_destination16(dt, n, src);
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source16(st, si);
+                self.write_destination16(dt, di, src);
             },
             Opcode::Moveq => {
-                let di = (op >> 9) & 7;
                 let v = op & 0xff;
+                let di = (op >> 9) & 7;
                 let val = if v < 0x80 { v as i16 } else { -256 + v as i16 };
                 self.d[di as usize] = (val as i32) as u32;
             },
@@ -129,18 +132,31 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 self.pc += 4;
                 self.a[di] = value;
             },
+            Opcode::LeaOffset => {
+                let si = (op & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let ofs = self.read16(self.pc) as SWord;
+                self.pc += 2;
+                self.a[di] = (self.a[si] as SLong + ofs as SLong) as Long;
+            },
+            Opcode::LeaOffsetPc => {
+                let di = ((op >> 9) & 7) as usize;
+                let ofs = self.read16(self.pc) as SWord;
+                self.pc += 2;
+                self.a[di] = (self.pc as SLong + ofs as SLong) as Long;
+            },
             Opcode::Clr => {
+                let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let n = (op & 7) as usize;
                 match op & 0xffc0 {
                     0x4200 => {  // byte
-                        self.write_destination8(dt, n, 0);
+                        self.write_destination8(dt, di, 0);
                     },
                     0x4240 => {  // word
-                        self.write_destination16(dt, n, 0);
+                        self.write_destination16(dt, di, 0);
                     },
                     0x4280 => {  // long
-                        self.write_destination32(dt, n, 0);
+                        self.write_destination32(dt, di, 0);
                     },
                     _ => {
                         panic!("Must not happen");
@@ -186,33 +202,66 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 sr &= !(FLAG_V | FLAG_C);
                 self.sr = sr;
             },
+            Opcode::TstLong => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let val = self.read_source32(st, si) as SLong;
+
+                let mut sr = self.sr;
+                if val == 0 {
+                    sr |= FLAG_Z;
+                } else {
+                    sr &= !FLAG_Z;
+                }
+                if val < 0 {
+                    sr |= FLAG_N;
+                } else {
+                    sr &= !FLAG_N;
+                }
+                sr &= !(FLAG_V | FLAG_C);
+                self.sr = sr;
+            },
             Opcode::Reset => {
                 // TODO: Implement.
             },
             Opcode::AddLong => {
-                let di = ((op >> 9) & 7) as usize;
-                let st = ((op >> 3) & 7) as usize;
                 let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source32(st, si);
                 self.d[di] = self.d[di].wrapping_add(src);
             },
             Opcode::AddaLong => {
-                let di = ((op >> 9) & 7) as usize;
-                let st = ((op >> 3) & 7) as usize;
                 let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source32(st, si);
                 self.a[di] = self.a[di].wrapping_add(src);
             },
-            Opcode::SubaLong => {
-                let di = ((op >> 9) & 7) as usize;
+            Opcode::AddqLong => {
                 let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let v = (((op >> 9) & 7).wrapping_sub(1) & 7) + 1;
+                let src = self.read_source32(st, si);
+                self.write_destination32(st, si, src.wrapping_add(v as u32));
+            },
+            Opcode::SubaLong => {
+                let si = (op & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
                 self.a[di] -= self.a[si];
             },
+            Opcode::SubqWord => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let v = (((op >> 9) & 7).wrapping_sub(1) & 7) + 1;
+                let src = self.read_source16(st, si);
+                self.write_destination16(st, si, src.wrapping_sub(v));
+            },
             Opcode::AndLong => {
-                let n = ((op >> 9) & 7) as usize;
-                let m = (op & 7) as usize;
-                let src = self.read_source32(((op >> 3) & 7) as usize, m);
-                self.d[n] &= src;
+                let si = (op & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source32(((op >> 3) & 7) as usize, si);
+                self.d[di] &= src;
             },
             Opcode::BranchCond => {
                 let (ofs, sz) = get_branch_offset(op, &self.bus, self.pc);
@@ -243,13 +292,13 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 self.pc = ((startadr + 2) as i32 + ofs as i32) as u32;
             },
             Opcode::JsrA => {
-                let di = (op & 7) as usize;
+                let si = (op & 7) as usize;
                 let adr = if (op & 15) < 8 {
-                    self.a[di]
+                    self.a[si]
                 } else {
                     let offset = self.read16(self.pc);
                     self.pc += 2;
-                    panic!("Not implemented: JSR (${:04x}, A{})", offset, di);
+                    panic!("Not implemented: JSR (${:04x}, A{})", offset, si);
                 };
                 self.push32(self.pc);
                 self.pc = adr;
@@ -321,6 +370,10 @@ impl <BusT: BusTrait> Cpu<BusT> {
             0 => {  // move.l Dm, xx
                 self.d[m] as u16
             },
+            2 => {  // move.l (Am), xx
+                let adr = self.a[m];
+                self.read16(adr)
+            },
             5 => {  // move.l (123, Am), xx
                 let ofs = self.read16(self.pc) as SWord;
                 self.pc += 2;
@@ -328,6 +381,11 @@ impl <BusT: BusTrait> Cpu<BusT> {
             },
             7 => {  // Misc.
                 match m {
+                    1 => {  // move.b $XXXXXXXX.l, xx
+                        let adr = self.read32(self.pc);
+                        self.pc += 4;
+                        self.read16(adr)
+                    },
                     4 => {  // move.w #$XXXX, xx
                         let value = self.read16(self.pc);
                         self.pc += 2;
@@ -361,8 +419,18 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 self.a[m] = adr + 4;
                 self.read32(adr)
             },
+            5 => {  // move.l (123, Am), xx
+                let ofs = self.read16(self.pc) as SWord;
+                self.pc += 2;
+                self.read32((self.a[m] as SLong + ofs as SLong) as Adr)
+            },
             7 => {  // Misc.
                 match m {
+                    1 => {  // move.b $XXXXXXXX.l, xx
+                        let adr = self.read32(self.pc);
+                        self.pc += 4;
+                        self.read32(adr)
+                    },
                     4 => {  // move.l #$XXXX, xx
                         let value = self.read32(self.pc);
                         self.pc += 4;
