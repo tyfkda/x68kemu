@@ -1,7 +1,7 @@
 use super::bus_trait::{BusTrait};
 use super::disasm::{disasm};
 use super::opcode::{Opcode, INST};
-use super::types::{Byte, Word, Long, SWord, SLong, Adr};
+use super::super::types::{Byte, Word, Long, SWord, SLong, Adr};
 
 const SP: usize = 7;  // Stack pointer = A7 register.
 

@@ -1,5 +1,5 @@
-use super::types::{Byte, Adr};
 use super::bus_trait::{BusTrait};
+use super::super::types::{Byte, Adr};
 
 pub struct Bus {
     mem: Vec<Byte>,

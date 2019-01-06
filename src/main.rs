@@ -1,5 +1,6 @@
 use std::fs;
 
+mod types;
 mod x68k;
 
 use self::x68k::bus_trait::{BusTrait};

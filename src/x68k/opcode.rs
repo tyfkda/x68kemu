@@ -1,4 +1,4 @@
-use super::types::{Word};
+use super::super::types::{Word};
 
 use lazy_static::lazy_static;
 

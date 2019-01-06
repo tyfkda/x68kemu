@@ -1,4 +1,4 @@
-use super::types::{Byte, Word, Long, Adr};
+use super::super::types::{Byte, Word, Long, Adr};
 
 pub trait BusTrait {
     fn read8(&self, adr: Adr) -> Byte;

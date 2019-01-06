@@ -1,7 +1,7 @@
 use super::bus_trait::{BusTrait};
 use super::cpu::{get_branch_offset};
 use super::opcode::{Opcode, INST};
-use super::types::{Word, SWord, Adr};
+use super::super::types::{Word, SWord, Adr};
 
 const DREG_NAMES: [&str; 8] = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7"];
 const AREG_NAMES: [&str; 8] = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"];
