@@ -1,7 +1,7 @@
-use super::bus::{Bus};
+use super::bus_trait::{BusTrait};
 use super::cpu::{get_branch_offset};
 use super::opcode::{Opcode, INST};
-use super::types::{Word, SWord, Adr};
+use super::super::types::{Word, SWord, Adr};
 
 const DREG_NAMES: [&str; 8] = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7"];
 const AREG_NAMES: [&str; 8] = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"];
@@ -19,7 +19,7 @@ fn apostinc(no: Word) -> String { APOSTINC_NAMES[no as usize].to_string() }
 fn apredec(no: Word) -> String { APREDEC_NAMES[no as usize].to_string() }
 fn bcond(no: Word) -> String { BCOND_NAMES[no as usize].to_string() }
 
-pub(crate) fn disasm(bus: &Bus, adr: Adr) -> (usize, String) {
+pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
     let op = bus.read16(adr);
     let inst = &INST[op as usize];
 
@@ -183,7 +183,7 @@ pub(crate) fn disasm(bus: &Bus, adr: Adr) -> (usize, String) {
     }
 }
 
-fn disasm_read_source8(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, String) {
+fn disasm_read_source8<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         0 => {  // move.b Dm, xx
             (0, dreg(m))
@@ -212,7 +212,7 @@ fn disasm_read_source8(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, Strin
     }
 }
 
-fn disasm_read_source16(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, String) {
+fn disasm_read_source16<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         0 => {  // move.w Dm, xx
             (0, dreg(m))
@@ -238,7 +238,7 @@ fn disasm_read_source16(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, Stri
     }
 }
 
-fn disasm_read_source32(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, String) {
+fn disasm_read_source32<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         0 => {  // move.l Dm, xx
             (0, dreg(m))
@@ -269,7 +269,7 @@ fn disasm_read_source32(bus: &Bus, adr: Adr,  src: usize, m: Word) -> (u32, Stri
     }
 }
 
-fn disasm_write_destination8(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32, String) {
+fn disasm_write_destination8<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
             (0, dreg(n))
@@ -294,7 +294,7 @@ fn disasm_write_destination8(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32, 
     }
 }
 
-fn disasm_write_destination16(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32, String) {
+fn disasm_write_destination16<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
             (0, dreg(n))
@@ -326,7 +326,7 @@ fn disasm_write_destination16(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32,
     }
 }
 
-fn disasm_write_destination32(bus: &Bus, adr: Adr, dst: usize, n: Word) -> (u32, String) {
+fn disasm_write_destination32<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
             (0, dreg(n))

@@ -1,7 +1,7 @@
-use super::bus::{Bus};
+use super::bus_trait::{BusTrait};
 use super::disasm::{disasm};
 use super::opcode::{Opcode, INST};
-use super::types::{Byte, Word, Long, SWord, SLong, Adr};
+use super::super::types::{Byte, Word, Long, SWord, SLong, Adr};
 
 const SP: usize = 7;  // Stack pointer = A7 register.
 
@@ -12,16 +12,16 @@ const FLAG_N: Word = 1 << 3;
 
 const TRAP_VECTOR_START: Adr = 0x0080;
 
-pub struct Cpu {
-    bus: Bus,
+pub struct Cpu<BusT> {
+    bus: BusT,
     a: [Adr; 8],  // Address registers
     d: [Long; 8],  // Data registers
     pc: Adr,
     sr: Word,
 }
 
-impl Cpu {
-    pub fn new(bus: Bus) -> Cpu {
+impl <BusT: BusTrait> Cpu<BusT> {
+    pub fn new(bus: BusT) -> Cpu<BusT> {
         let mut cpu = Cpu {
             bus: bus,
             a: [0; 8],
@@ -42,7 +42,7 @@ impl Cpu {
     pub fn run(&mut self) {
         loop {
             let (sz, mnemonic) = disasm(&self.bus, self.pc);
-            println!("{:06x}: {}  {}", self.pc, self.bus.dump_mem(self.pc, sz, 5), mnemonic);
+            println!("{:06x}: {}  {}", self.pc, dump_mem(&self.bus, self.pc, sz, 5), mnemonic);
             self.step();
         }
     }
@@ -504,11 +504,22 @@ impl Cpu {
     }
 }
 
-pub fn get_branch_offset(op: Word, bus: &Bus, adr: Adr) -> (i16, u32) {
+pub fn get_branch_offset<BusT: BusTrait>(op: Word, bus: &BusT, adr: Adr) -> (i16, u32) {
     let ofs = ((op & 0x00ff) as i8) as i16;
     if ofs != 0 {
         (ofs, 0)
     } else {
         (bus.read16(adr) as i16, 2)
     }
+}
+
+fn dump_mem<BusT: BusTrait>(bus: &BusT, adr: Adr, sz: usize, max: usize) -> String {
+    let arr = (0..max).map(|i| {
+        if i * 2 < sz {
+            format!("{:04x}", bus.read16(adr + (i as u32) * 2))
+        } else {
+            String::from("    ")
+        }
+    });
+    arr.collect::<Vec<String>>().join(" ")
 }
