@@ -8,22 +8,24 @@ const AREG_NAMES: [&str; 8] = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"];
 const AINDIRECT_NAMES: [&str; 8] = ["(A0)", "(A1)", "(A2)", "(A3)", "(A4)", "(A5)", "(A6)", "(A7)"];
 const APOSTINC_NAMES: [&str; 8] = ["(A0)+", "(A1)+", "(A2)+", "(A3)+", "(A4)+", "(A5)+", "(A6)+", "(A7)+"];
 const APREDEC_NAMES: [&str; 8] = ["-(A0)", "-(A1)", "-(A2)", "-(A3)", "-(A4)", "-(A5)", "-(A6)", "-(A7)"];
-const BCOND_NAMES: [&str; 2] = ["bne", "beq"];
 
-const MOVEM_NAMES: [&str; 16] = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"];
+const MOVE_NAMES: [&str; 8] = ["move", "movea", "move", "move", "move", "move", "move", "move"];
+const MOVEM_REG_NAMES: [&str; 16] = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"];
 
 fn dreg(no: Word) -> String { DREG_NAMES[no as usize].to_string() }
 fn areg(no: Word) -> String { AREG_NAMES[no as usize].to_string() }
 fn aindname(no: Word) -> String { AINDIRECT_NAMES[no as usize].to_string() }
 fn apostinc(no: Word) -> String { APOSTINC_NAMES[no as usize].to_string() }
 fn apredec(no: Word) -> String { APREDEC_NAMES[no as usize].to_string() }
-fn bcond(no: Word) -> String { BCOND_NAMES[no as usize].to_string() }
 
 pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
     let op = bus.read16(adr);
     let inst = &INST[op as usize];
 
     match inst.op {
+        Opcode::Nop => {
+            (2, "nop".to_string())
+        },
         Opcode::MoveByte => {
             let si = op & 7;
             let st = ((op >> 3) & 7) as usize;
@@ -31,16 +33,7 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let di = (op >> 9) & 7;
             let (ssz, sstr) = read_source8(bus, adr + 2, st, si);
             let (dsz, dstr) = write_destination8(bus, adr + 2 + ssz, dt, di);
-            ((2 + ssz + dsz) as usize, format!("move.b {}, {}", sstr, dstr))
-        },
-        Opcode::MoveLong => {
-            let si = op & 7;
-            let st = ((op >> 3) & 7) as usize;
-            let dt = ((op >> 6) & 7) as usize;
-            let di = (op >> 9) & 7;
-            let (ssz, sstr) = read_source32(bus, adr + 2, st, si);
-            let (dsz, dstr) = write_destination32(bus, adr + 2 + ssz, dt, di);
-            ((2 + ssz + dsz) as usize, format!("move.l {}, {}", sstr, dstr))  // TODO: Use movea for a-regs.
+            ((2 + ssz + dsz) as usize, format!("{}.b {}, {}", MOVE_NAMES[dt], sstr, dstr))
         },
         Opcode::MoveWord => {
             let si = op & 7;
@@ -49,7 +42,16 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let di = (op >> 9) & 7;
             let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
             let (dsz, dstr) = write_destination16(bus, adr + 2 + ssz, dt, di);
-            ((2 + ssz + dsz) as usize, format!("move.w {}, {}", sstr, dstr))
+            ((2 + ssz + dsz) as usize, format!("{}.w {}, {}", MOVE_NAMES[dt], sstr, dstr))
+        },
+        Opcode::MoveLong => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let dt = ((op >> 6) & 7) as usize;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source32(bus, adr + 2, st, si);
+            let (dsz, dstr) = write_destination32(bus, adr + 2 + ssz, dt, di);
+            ((2 + ssz + dsz) as usize, format!("{}.l {}, {}", MOVE_NAMES[dt], sstr, dstr))
         },
         Opcode::Moveq => {
             let v = op & 0xff;
@@ -62,7 +64,7 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let bits = bus.read16(adr + 2);
             let regs = (0..16)
                 .filter(|i| { (bits & ((0x8000 as u16) >> i)) != 0 })
-                .map(|i| { MOVEM_NAMES[i] })
+                .map(|i| { MOVEM_REG_NAMES[i] })
                 .collect::<Vec<&str>>().join("/");
             (4, format!("movem.l {}, {}", regs, apredec(di)))
         },
@@ -71,7 +73,7 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let bits = bus.read16(adr + 2);
             let regs = (0..16)
                 .filter(|i| { (bits & ((1 as u16) << i)) != 0 })
-                .map(|i| { MOVEM_NAMES[i] })
+                .map(|i| { MOVEM_REG_NAMES[i] })
                 .collect::<Vec<&str>>().join("/");
             (4, format!("movem.l {}, {}", apostinc(si), regs))
         },
@@ -116,10 +118,40 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
                 },
             }
         },
+        Opcode::CmpByte => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source8(bus, adr + 2, st, si);
+            let (dsz, dstr) = write_destination8(bus, adr + 2 + ssz, 0, di);
+            ((2 + ssz + dsz) as usize, format!("cmp.b {}, {}", sstr, dstr))
+        },
+        Opcode::CmpWord => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
+            let (dsz, dstr) = write_destination16(bus, adr + 2 + ssz, 0, di);
+            ((2 + ssz + dsz) as usize, format!("cmp.w {}, {}", sstr, dstr))
+        },
+        Opcode::CmpaLong => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source32(bus, adr + 2, st, si);
+            let (dsz, dstr) = write_destination32(bus, adr + 2 + ssz, 1, di);
+            ((2 + ssz + dsz) as usize, format!("cmpa.l {}, {}", sstr, dstr))
+        },
         Opcode::CmpmByte => {
             let si = op & 7;
             let di = (op >> 9) & 7;
             (2, format!("cmpm.b {}, {}", apostinc(si), apostinc(di)))
+        },
+        Opcode::TstByte => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let (ssz, sstr) = read_source8(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("tst.b {}", sstr))
         },
         Opcode::TstWord => {
             let si = op & 7;
@@ -177,20 +209,19 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let (ssz, sstr) = read_source32(bus, adr + 2, ((op >> 3) & 7) as usize, si);
             ((2 + ssz) as usize, format!("and.l {}, {}", sstr, dreg(di)))
         },
-        Opcode::BranchCond => {
-            let (ofs, sz) = get_branch_offset(op, bus, adr + 2);
-            let jmp = ((adr + 2) as SLong + ofs as SLong) as Long;
-            let bt = (op >> 8) - 0x66;
-            ((2 + sz) as usize, format!("{} ${:06x}", bcond(bt), jmp))
-        },
+        Opcode::Bcc => { bcond(bus, adr + 2, op, "bcc") },
+        Opcode::Bcs => { bcond(bus, adr + 2, op, "bcs") },
+        Opcode::Bne => { bcond(bus, adr + 2, op, "bne") },
+        Opcode::Beq => { bcond(bus, adr + 2, op, "beq") },
         Opcode::Dbra => {
             let si = op & 7;
             let ofs = bus.read16(adr + 2) as SWord;
-            (4, format!("dbra D{}, ${:06x}", si, ((adr + 2) as SLong).wrapping_add(ofs as SLong) as Long))
+            let jmp = ((adr + 2) as SLong).wrapping_add(ofs as SLong) as Long;
+            (4, format!("dbra {}, ${:06x}", dreg(si), jmp))
         },
         Opcode::Bsr => {
             let (ofs, sz) = get_branch_offset(op, bus, adr + 2);
-            let jmp = ((adr + 2) as SLong + ofs as SLong) as Long;
+            let jmp = ((adr + 2) as SLong + ofs) as Long;
             ((2 + sz) as usize, format!("bsr ${:06x}", jmp))
         },
         Opcode::JsrA => {
@@ -203,7 +234,10 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             }
         },
         Opcode::Rts => {
-            (2, String::from("rts"))
+            (2, "rts".to_string())
+        },
+        Opcode::Rte => {
+            (2, "rte".to_string())
         },
         Opcode::Trap => {
             let no = op & 0x000f;
@@ -213,6 +247,12 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             (2, format!("**{:04x}** Unknown opcode", op))
         },
     }
+}
+
+fn bcond<BusT: BusTrait>(bus: &BusT, adr: Adr, op: Word, bname: &str) -> (usize, String) {
+    let (ofs, sz) = get_branch_offset(op, bus, adr);
+    let jmp = (adr as SLong).wrapping_add(ofs) as Long;
+    ((2 + sz) as usize, format!("{} ${:06x}", bname, jmp))
 }
 
 fn read_source8<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {
@@ -231,7 +271,7 @@ fn read_source8<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> (
                 },
                 4 => {  // move.b #$XXXX, xx
                     let value = bus.read16(adr);
-                    (2, format!("#${:04x}", value))
+                    (2, format!("#${:02x}", value & 0x00ff))
                 },
                 _ => {
                     (0, format!("UnhandledSrc(7/{})", m))
@@ -324,6 +364,10 @@ fn write_destination8<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word)
         3 => {
             (0, apostinc(n))
         },
+        5 => {  // move.b xx, (123, An)
+            let ofs = bus.read16(adr) as SWord;
+            (2, format!("({}, {})", ofs, areg(n)))
+        },
         7 => {
             match n {
                 1 => {
@@ -352,7 +396,7 @@ fn write_destination16<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word
         3 => {
             (0, apostinc(n))
         },
-        5 => {  // move.l xx, (123, An)
+        5 => {  // move.w xx, (123, An)
             let ofs = bus.read16(adr) as SWord;
             (2, format!("({}, {})", ofs, areg(n)))
         },

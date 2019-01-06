@@ -23,7 +23,19 @@ impl BusTrait for Bus {
     fn write8(&mut self, adr: Adr, value: Byte) {
         if /*0x000000 <= adr &&*/ adr <= 0xffff {
             self.mem[adr as usize] = value;
+        } else if 0xe00000 <= adr && adr <= 0xe7ffff {  // TEXT VRAM
+            // TODO: Implement.
+        } else if 0xe80000 <= adr && adr <= 0xe81fff {  // CRTC
+            // TODO: Implement.
+        } else if 0xe82000 <= adr && adr <= 0xe83fff {  // video
+            // TODO: Implement.
+        } else if 0xe84000 <= adr && adr <= 0xe85fff {  // DMAC
+            // TODO: Implement.
+        } else if 0xe8a000 <= adr && adr <= 0xe8bfff {  // Printer
+            // TODO: Implement.
         } else if 0xe8e00d == adr {  // ?
+            // TODO: Implement.
+        } else if 0xe9a000 <= adr && adr <= 0xe9bfff {  // i8255
             // TODO: Implement.
         } else if 0xed0000 <= adr && adr <= 0xed3fff {
             self.sram[(adr - 0xed0000) as usize] = value;
