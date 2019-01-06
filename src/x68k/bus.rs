@@ -1,4 +1,4 @@
-use super::bus_trait::{BusTrait};
+use super::super::cpu::{BusTrait};
 use super::super::types::{Byte, Adr};
 
 pub struct Bus {
