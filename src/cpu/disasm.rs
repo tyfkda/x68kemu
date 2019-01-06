@@ -52,8 +52,7 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let di = (op >> 9) & 7;
             let v = op & 0xff;
             let val = if v < 0x80 { v as i16 } else { -256 + v as i16 };
-            //d[di].l = val;
-            (2, format!("moveq #{}, D{}", val, di))
+            (2, format!("moveq #{}, {}", val, dreg(di)))
         },
         Opcode::MovemFrom => {
             let di = op & 7;
@@ -78,9 +77,9 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             (4, format!("move #${:04x}, SR", sr))
         },
         Opcode::LeaDirect => {
-            let di = ((op >> 9) & 7) as usize;
+            let di = (op >> 9) & 7;
             let value = bus.read32(adr + 2);
-            (6, format!("lea ${:08x}.l, A{:?}", value, di))
+            (6, format!("lea ${:08x}.l, {}", value, areg(di)))
         },
         Opcode::Clr => {
             let dt = ((op >> 3) & 7) as usize;
@@ -106,7 +105,7 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
         Opcode::CmpmByte => {
             let si = op & 7;
             let di = (op >> 9) & 7;
-            (2, format!("cmpm.b (A{})+, (A{})+", si, di))
+            (2, format!("cmpm.b {}, {}", apostinc(si), apostinc(di)))
         },
         Opcode::TstWord => {
             let si = op & 7;
@@ -118,31 +117,31 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             (2, "reset".to_string())
         },
         Opcode::AddLong => {
-            let di = ((op >> 9) & 7) as usize;
+            let di = (op >> 9) & 7;
             let st = ((op >> 3) & 7) as usize;
             let si = op & 7;
             let (ssz, sstr) = disasm_read_source32(bus, adr + 2, st, si);
-            ((2 + ssz) as usize, format!("add.l {}, D{}", sstr, di))
+            ((2 + ssz) as usize, format!("add.l {}, {}", sstr, dreg(di)))
         },
         Opcode::AddaLong => {
-            let di = ((op >> 9) & 7) as usize;
+            let di = (op >> 9) & 7;
             let st = ((op >> 3) & 7) as usize;
             let si = op & 7;
             let (ssz, sstr) = disasm_read_source32(bus, adr + 2, st, si);
-            ((2 + ssz) as usize, format!("adda.l {}, A{}", sstr, di))
+            ((2 + ssz) as usize, format!("adda.l {}, {}", sstr, areg(di)))
         },
         Opcode::SubaLong => {
-            let di = ((op >> 9) & 7) as usize;
+            let di = (op >> 9) & 7;
             let st = ((op >> 3) & 7) as usize;
             let si = op & 7;
             let (ssz, sstr) = disasm_read_source32(bus, adr + 2, st, si);
-            ((2 + ssz) as usize, format!("suba.l {}, A{}", sstr, di))
+            ((2 + ssz) as usize, format!("suba.l {}, {}", sstr, areg(di)))
         },
         Opcode::AndLong => {
             let n = (op >> 9) & 7;
             let m = op & 7;
             let (ssz, sstr) = disasm_read_source32(bus, adr + 2, ((op >> 3) & 7) as usize, m);
-            ((2 + ssz) as usize, format!("and.l {}, D{}", sstr, n))
+            ((2 + ssz) as usize, format!("and.l {}, {}", sstr, dreg(n)))
         },
         Opcode::BranchCond => {
             let (ofs, sz) = get_branch_offset(op, bus, adr + 2);
@@ -153,7 +152,7 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
         Opcode::Dbra => {
             let si = op & 7;
             let ofs = bus.read16(adr + 2) as i16;
-            (4, format!("dbra D{}, {:06x}", si, (adr + 2).wrapping_add((ofs as i32) as u32)))
+            (4, format!("dbra D{}, ${:06x}", si, (adr + 2).wrapping_add((ofs as i32) as u32)))
         },
         Opcode::Bsr => {
             let (ofs, sz) = get_branch_offset(op, bus, adr + 2);
