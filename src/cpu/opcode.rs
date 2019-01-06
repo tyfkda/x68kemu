@@ -15,6 +15,7 @@ pub(crate) enum Opcode {
     MoveToSrIm,          // move #$xxxx, SR
     LeaDirect,           // lea $xxxxxxxx, Ax
     LeaOffset,           // lea (xx, As), Ad
+    LeaOffsetD,          // lea (xx, As, Dt), Ad
     LeaOffsetPc,         // lea (xx, PC), Ad
     Clr,                 // clr xx
     CmpByte,             // cmp.b XX, YY
@@ -31,6 +32,7 @@ pub(crate) enum Opcode {
     SubaLong,            // suba.l As, Ad
     SubqWord,            // subq.w #%d, D%d
     AndLong,             // and.l XX, Dd
+    AslImWord,           // asl.w #n, Dd
     Bcc,                 // bcc $xxxx
     Bcs,                 // bcs $xxxx
     Bne,                 // bne $xxxx
@@ -80,7 +82,8 @@ lazy_static! {
         mask_inst(&mut m, 0xf000, 0x1000, &Inst {op: Opcode::MoveByte});  // 1000-1fff
         mask_inst(&mut m, 0xf000, 0x2000, &Inst {op: Opcode::MoveLong});  // 2000-2fff
         mask_inst(&mut m, 0xf000, 0x3000, &Inst {op: Opcode::MoveWord});  // 3000-3fff
-        mask_inst(&mut m, 0xf1f8, 0x41e8, &Inst {op: Opcode::LeaOffset});  // 41e8, 41e9, 43e8, ..., 4fef
+        mask_inst(&mut m, 0xf1f8, 0x41e8, &Inst {op: Opcode::LeaOffset});  // 41e8-41ef, 43e8-43ef, ..., -4fef
+        mask_inst(&mut m, 0xf1f8, 0x41f0, &Inst {op: Opcode::LeaOffsetD});  // 41f0-41f7, 43f0-43f7, ..., -4ff7
         mask_inst(&mut m, 0xf1ff, 0x41f9, &Inst {op: Opcode::LeaDirect});  // 41f9, 43f9, ..., 4ff9
         mask_inst(&mut m, 0xf1ff, 0x41fa, &Inst {op: Opcode::LeaOffsetPc});  // 41fa, 43fa, ..., 4ffa
         m[0x46fc] = &Inst {op: Opcode::MoveToSrIm};
@@ -118,6 +121,7 @@ lazy_static! {
         mask_inst(&mut m, 0xf1c0, 0xc080, &Inst {op: Opcode::AndLong});  // c080, c081, c280, ..., cebf
         mask_inst(&mut m, 0xf1c0, 0xd080, &Inst {op: Opcode::AddLong});  // d080, d081, d280, ..., de87
         mask_inst(&mut m, 0xf1c0, 0xd1c0, &Inst {op: Opcode::AddaLong});  // d1c8, d1c9, d3c8, ..., dfff
+        mask_inst(&mut m, 0xf1f8, 0xe140, &Inst {op: Opcode::AslImWord});  // e140-e147, e340-e347, ..., ef40-ef47
         m
     };
 }

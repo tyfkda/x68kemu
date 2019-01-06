@@ -1,7 +1,7 @@
 use super::bus_trait::{BusTrait};
 use super::cpu::{get_branch_offset};
 use super::opcode::{Opcode, INST};
-use super::super::types::{Word, Long, SWord, SLong, Adr};
+use super::super::types::{Word, Long, SByte, SWord, SLong, Adr};
 
 const DREG_NAMES: [&str; 8] = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7"];
 const AREG_NAMES: [&str; 8] = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"];
@@ -91,6 +91,18 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let di = (op >> 9) & 7;
             let ofs = bus.read16(adr + 2) as SWord;
             (4, format!("lea ({}, {}), {}", ofs, areg(si), areg(di)))
+        },
+        Opcode::LeaOffsetD => {
+            let si = op & 7;
+            let di = (op >> 9) & 7;
+            let next = bus.read16(adr + 2);
+            if (next & 0x8f00) == 0x0000 {
+                let ofs = next as SByte;
+                let ii = (next >> 12) & 0x07;
+                (4, format!("lea ({}, {}, {}.w), {}", ofs, areg(si), dreg(ii), areg(di)))
+            } else {
+                (4, "**Not implemented**".to_string())
+            }
         },
         Opcode::LeaOffsetPc => {
             let di = (op >> 9) & 7;
@@ -209,6 +221,11 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let (ssz, sstr) = read_source32(bus, adr + 2, ((op >> 3) & 7) as usize, si);
             ((2 + ssz) as usize, format!("and.l {}, {}", sstr, dreg(di)))
         },
+        Opcode::AslImWord => {
+            let shift = (((op >> 9) - 1) & 7) + 1;  // 1~8
+            let di = op & 7;
+            (2, format!("asl.w #{}, {}", shift, dreg(di)))
+        },
         Opcode::Bcc => { bcond(bus, adr + 2, op, "bcc") },
         Opcode::Bcs => { bcond(bus, adr + 2, op, "bcs") },
         Opcode::Bne => { bcond(bus, adr + 2, op, "bne") },
@@ -291,6 +308,9 @@ fn read_source16<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> 
         },
         2 => {  // move.l (Am), xx
             (0, aindname(m))
+        },
+        3 => {  // move.w (Am)+, xx
+            (0, apostinc(m))
         },
         5 => {  // move.l (123, An), xx
             let ofs = bus.read16(adr) as SWord;

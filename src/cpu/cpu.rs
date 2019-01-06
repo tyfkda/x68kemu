@@ -142,6 +142,19 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 self.pc += 2;
                 self.a[di] = (self.a[si] as SLong + ofs as SLong) as Long;
             },
+            Opcode::LeaOffsetD => {
+                let si = (op & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let next = self.read16(self.pc);
+                self.pc += 2;
+                if (next & 0x8f00) == 0x0000 {
+                    let ofs = next as SByte;
+                    let ii = ((next >> 12) & 0x07) as usize;
+                    self.a[di] = (self.a[si] as SLong).wrapping_add(self.d[ii] as SWord as SLong).wrapping_add(ofs as SLong) as Adr
+                } else {
+                    panic!("Not implemented");
+                }
+            },
             Opcode::LeaOffsetPc => {
                 let di = ((op >> 9) & 7) as usize;
                 let ofs = self.read16(self.pc) as SWord;
@@ -259,6 +272,12 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let src = self.read_source32(((op >> 3) & 7) as usize, si);
                 self.d[di] &= src;
             },
+            Opcode::AslImWord => {
+                let shift = ((op >> 9).wrapping_sub(1) & 7) + 1;  // 1~8
+                let di = (op & 7) as usize;
+                self.d[di] = (self.d[di] & 0xffff0000) | ((self.d[di] << shift) & 0x0000ffff);
+                // TODO: Set SR.
+            },
             Opcode::Bcc => { self.bcond(op, (self.sr & FLAG_C) == 0); },
             Opcode::Bcs => { self.bcond(op, (self.sr & FLAG_C) != 0); },
             Opcode::Bne => { self.bcond(op, (self.sr & FLAG_Z) == 0); },
@@ -368,6 +387,11 @@ impl <BusT: BusTrait> Cpu<BusT> {
             },
             2 => {  // move.l (Am), xx
                 let adr = self.a[m];
+                self.read16(adr)
+            },
+            3 => {  // move.w (Am)+, xx
+                let adr = self.a[m];
+                self.a[m] = adr + 2;
                 self.read16(adr)
             },
             5 => {  // move.l (123, Am), xx
