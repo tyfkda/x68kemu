@@ -283,7 +283,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
         self.read32(oldsp)
     }
 
-    fn read_source8(&mut self, src: usize, m: usize) -> u8 {
+    fn read_source8(&mut self, src: usize, m: usize) -> Byte {
         match src {
             0 => {  // move.l Dm, xx
                 self.d[m] as u8
@@ -316,7 +316,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
         }
     }
 
-    fn read_source16(&mut self, src: usize, m: usize) -> u16 {
+    fn read_source16(&mut self, src: usize, m: usize) -> Word {
         match src {
             0 => {  // move.l Dm, xx
                 self.d[m] as u16
@@ -344,7 +344,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
         }
     }
 
-    fn read_source32(&mut self, src: usize, m: usize) -> u32 {
+    fn read_source32(&mut self, src: usize, m: usize) -> Long {
         match src {
             0 => {  // move.l Dm, xx
                 self.d[m]
