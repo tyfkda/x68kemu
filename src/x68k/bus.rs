@@ -1,4 +1,5 @@
-use super::types::{Byte, Word, Long, Adr};
+use super::types::{Byte, Adr};
+use super::bus_trait::{BusTrait};
 
 pub struct Bus {
     mem: Vec<Byte>,
@@ -6,16 +7,8 @@ pub struct Bus {
     ipl: Vec<Byte>,
 }
 
-impl Bus {
-    pub fn new(ipl: Vec<Byte>) -> Bus {
-        Bus {
-            mem: vec![0; 0x10000],
-            sram: vec![0; 0x4000],
-            ipl: ipl,
-        }
-    }
-
-    pub fn read8(&self, adr: Adr) -> Byte {
+impl BusTrait for Bus {
+    fn read8(&self, adr: Adr) -> Byte {
         if /*0x000000 <= adr &&*/ adr <= 0xffff {
             self.mem[adr as usize]
         } else if 0xed0000 <= adr && adr <= 0xed3fff {
@@ -27,21 +20,7 @@ impl Bus {
         }
     }
 
-    pub(crate) fn read16(&self, adr: Adr) -> Word {
-        let d0 = self.read8(adr) as Word;
-        let d1 = self.read8(adr + 1) as Word;
-        (d0 << 8) | d1
-    }
-
-    pub(crate) fn read32(&self, adr: Adr) -> Long {
-        let d0 = self.read8(adr) as Long;
-        let d1 = self.read8(adr + 1) as Long;
-        let d2 = self.read8(adr + 2) as Long;
-        let d3 = self.read8(adr + 3) as Long;
-        (d0 << 24) | (d1 << 16) | (d2 << 8) | d3
-    }
-
-    pub fn write8(&mut self, adr: Adr, value: Byte) {
+    fn write8(&mut self, adr: Adr, value: Byte) {
         if /*0x000000 <= adr &&*/ adr <= 0xffff {
             self.mem[adr as usize] = value;
         } else if 0xe8e00d == adr {  // ?
@@ -52,27 +31,14 @@ impl Bus {
             panic!("Illegal address: {:08x}", adr);
         }
     }
+}
 
-    pub fn write16(&mut self, adr: Adr, value: Word) {
-        self.write8(adr    , (value >>  8) as Byte);
-        self.write8(adr + 1,  value        as Byte);
-    }
-
-    pub fn write32(&mut self, adr: Adr, value: Long) {
-        self.write8(adr,     (value >> 24) as Byte);
-        self.write8(adr + 1, (value >> 16) as Byte);
-        self.write8(adr + 2, (value >>  8) as Byte);
-        self.write8(adr + 3,  value        as Byte);
-    }
-
-    pub fn dump_mem(&self, adr: Adr, sz: usize, max: usize) -> String {
-        let arr = (0..max).map(|i| {
-            if i * 2 < sz {
-                format!("{:04x}", self.read16(adr + (i as u32) * 2))
-            } else {
-                String::from("    ")
-            }
-        });
-        arr.collect::<Vec<String>>().join(" ")
+impl Bus {
+    pub fn new(ipl: Vec<Byte>) -> Bus {
+        Bus {
+            mem: vec![0; 0x10000],
+            sram: vec![0; 0x4000],
+            ipl: ipl,
+        }
     }
 }

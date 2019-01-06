@@ -2,7 +2,9 @@ use std::fs;
 
 mod x68k;
 
-fn main_loop(mut cpu: x68k::cpu::Cpu) {
+use self::x68k::bus_trait::{BusTrait};
+
+fn main_loop<BusT: BusTrait>(mut cpu: x68k::cpu::Cpu<BusT>) {
     cpu.run();
 }
 
