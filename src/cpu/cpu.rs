@@ -250,7 +250,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
             Opcode::AddqLong => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
-                let v = (((op >> 9) & 7).wrapping_sub(1) & 7) + 1;
+                let v = conv07to18(op >> 9);
                 let src = self.read_source32(st, si);
                 self.write_destination32(st, si, src.wrapping_add(v as u32));
             },
@@ -262,20 +262,56 @@ impl <BusT: BusTrait> Cpu<BusT> {
             Opcode::SubqWord => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
-                let v = (((op >> 9) & 7).wrapping_sub(1) & 7) + 1;
+                let v = conv07to18(op >> 9);
                 let src = self.read_source16(st, si);
                 self.write_destination16(st, si, src.wrapping_sub(v));
             },
+            Opcode::AndWord => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source16(st, si);
+                self.d[di] = replace_word(self.d[di], (self.d[di] as Word) & src);
+            },
             Opcode::AndLong => {
                 let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
-                let src = self.read_source32(((op >> 3) & 7) as usize, si);
+                let src = self.read_source32(st, si);
                 self.d[di] &= src;
             },
-            Opcode::AslImWord => {
-                let shift = ((op >> 9).wrapping_sub(1) & 7) + 1;  // 1~8
+            Opcode::AndiWord => {
                 let di = (op & 7) as usize;
-                self.d[di] = (self.d[di] & 0xffff0000) | ((self.d[di] << shift) & 0x0000ffff);
+                let dt = ((op >> 3) & 7) as usize;
+                let v = self.read16(self.pc);
+                self.pc += 2;
+                let src = self.read_source16(dt, di);
+                self.write_destination16(dt, di, src & v);
+            },
+            Opcode::AslImWord => {
+                let di = (op & 7) as usize;
+                let shift = conv07to18(op >> 9);
+                self.d[di] = replace_word(self.d[di], (self.d[di] as Word) << shift);
+                // TODO: Set SR.
+            },
+            Opcode::AslImLong => {
+                let di = (op & 7) as usize;
+                let shift = conv07to18(op >> 9);
+                self.d[di] <<= shift;
+                // TODO: Set SR.
+            },
+            Opcode::RorWord => {
+                let di = (op & 7) as usize;
+                let si = conv07to18(op >> 9);
+                let w = self.d[di] as Word;
+                self.d[di] = replace_word(self.d[di], (w >> si) | (w << (8 - si)));
+                // TODO: Set SR.
+            },
+            Opcode::RolByte => {
+                let di = (op & 7) as usize;
+                let si = conv07to18(op >> 9);
+                let b = self.d[di] as Byte;
+                self.d[di] = replace_byte(self.d[di], (b << si) | (b >> (8 - si)));
                 // TODO: Set SR.
             },
             Opcode::Bcc => { self.bcond(op, (self.sr & FLAG_C) == 0); },
@@ -288,7 +324,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
 
                 let l = self.d[si];
                 let w = (l as u16).wrapping_sub(1);
-                self.d[si] = (l & 0xffff0000) | (w as u32);
+                self.d[si] = replace_word(l, w);
                 self.pc = if w != 0xffff { (self.pc as SLong).wrapping_add(ofs as SLong) as Adr } else { self.pc + 2 }
             },
             Opcode::Bsr => {
@@ -352,10 +388,19 @@ impl <BusT: BusTrait> Cpu<BusT> {
             0 => {  // move.l Dm, xx
                 self.d[m] as u8
             },
+            2 => {  // move.b (Am), xx
+                let adr = self.a[m];
+                self.read8(adr)
+            },
             3 => {  // move.b (Am)+, xx
                 let adr = self.a[m];
                 self.a[m] = adr + 1;
                 self.read8(adr)
+            },
+            5 => {  // move.b (123, Am), xx
+                let ofs = self.read16(self.pc) as SWord;
+                self.pc += 2;
+                self.read8((self.a[m] as SLong + ofs as SLong) as Adr)
             },
             7 => {  // Misc.
                 match m {
@@ -382,10 +427,10 @@ impl <BusT: BusTrait> Cpu<BusT> {
 
     fn read_source16(&mut self, src: usize, m: usize) -> Word {
         match src {
-            0 => {  // move.l Dm, xx
+            0 => {  // move.w Dm, xx
                 self.d[m] as u16
             },
-            2 => {  // move.l (Am), xx
+            2 => {  // move.w (Am), xx
                 let adr = self.a[m];
                 self.read16(adr)
             },
@@ -394,7 +439,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 self.a[m] = adr + 2;
                 self.read16(adr)
             },
-            5 => {  // move.l (123, Am), xx
+            5 => {  // move.w (123, Am), xx
                 let ofs = self.read16(self.pc) as SWord;
                 self.pc += 2;
                 self.read16((self.a[m] as SLong + ofs as SLong) as Adr)
@@ -470,7 +515,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
     fn write_destination8(&mut self, dst: usize, n: usize, value: Byte) {
         match dst {
             0 => {
-                self.d[n] = (self.d[n] & 0xffffff00) | (value as u32);
+                self.d[n] = replace_byte(self.d[n], value);
             },
             3 => {
                 let adr = self.a[n];
@@ -503,10 +548,13 @@ impl <BusT: BusTrait> Cpu<BusT> {
     fn write_destination16(&mut self, dst: usize, n: usize, value: Word) {
         match dst {
             0 => {
-                self.d[n] = (self.d[n] & 0xffff0000) | (value as u32);
+                self.d[n] = replace_word(self.d[n], value);
             },
             1 => {
-                self.a[n] = (self.a[n] & 0xffff0000) | (value as u32);
+                self.a[n] = replace_word(self.a[n], value);
+            },
+            2 => {  // move.w xx, (An)
+                self.write16(self.a[n], value);
             },
             3 => {
                 let adr = self.a[n];
@@ -548,6 +596,11 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let adr = self.a[n];
                 self.write32(adr, value);
                 self.a[n] = adr + 4;
+            },
+            4 => {
+                let adr = self.a[n] - 4;
+                self.a[n] = adr;
+                self.write32(adr, value);
             },
             5 => {  // move.l xx, (123, An)
                 let ofs = self.read16(self.pc) as SWord;
@@ -637,6 +690,43 @@ pub fn get_branch_offset<BusT: BusTrait>(op: Word, bus: &BusT, adr: Adr) -> (SLo
             (ofs as SByte as SWord as SLong , 0)
         },
     }
+}
+
+// Return 0~7 => 8,1~7
+pub fn conv07to18(x: Word) -> Word {
+    ((x & 7).wrapping_sub(1) & 7) + 1
+}
+
+#[test]
+fn test_conv07to18() {
+    assert_eq!(8, conv07to18(0));
+    assert_eq!(1, conv07to18(1));
+    assert_eq!(7, conv07to18(7));
+}
+
+#[test]
+fn test_shift_byte() {
+    let b: Byte = 0xa5;  // 0b10100101
+    assert_eq!(0x28 as Byte, b << 3);
+    assert_eq!(0x29 as Byte, b >> 2);
+}
+
+fn replace_byte(x: Long, b: Byte) -> Long {
+    (x & 0xffffff00) | (b as Long)
+}
+
+#[test]
+fn test_replace_byte() {
+    assert_eq!(0x123456ab, replace_byte(0x12345678, 0xab));
+}
+
+fn replace_word(x: Long, w: Word) -> Long {
+    (x & 0xffff0000) | (w as Long)
+}
+
+#[test]
+fn test_replace_word() {
+    assert_eq!(0x1234abcd, replace_word(0x12345678, 0xabcd));
 }
 
 fn dump_mem<BusT: BusTrait>(bus: &BusT, adr: Adr, sz: usize, max: usize) -> String {

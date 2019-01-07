@@ -11,6 +11,9 @@ impl BusTrait for Bus {
     fn read8(&self, adr: Adr) -> Byte {
         if /*0x000000 <= adr &&*/ adr <= 0xffff {
             self.mem[adr as usize]
+        } else if 0xe80000 <= adr && adr <= 0xe80030 {  // CRTC
+            // TODO: Implement.
+            return 0;
         } else if 0xed0000 <= adr && adr <= 0xed3fff {
             self.sram[(adr - 0xed0000) as usize]
         } else if 0xfe0000 <= adr && adr <= 0xffffff {
@@ -36,6 +39,8 @@ impl BusTrait for Bus {
         } else if 0xe8e00d == adr {  // ?
             // TODO: Implement.
         } else if 0xe9a000 <= adr && adr <= 0xe9bfff {  // i8255
+            // TODO: Implement.
+        } else if 0xeb0000 <= adr && adr <= 0xebffff {  // Sprite
             // TODO: Implement.
         } else if 0xed0000 <= adr && adr <= 0xed3fff {
             self.sram[(adr - 0xed0000) as usize] = value;
