@@ -130,6 +130,10 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
                 },
             }
         },
+        Opcode::Swap => {
+            let di = op & 7;
+            (2, format!("swap {}", dreg(di)))
+        },
         Opcode::CmpByte => {
             let si = op & 7;
             let st = ((op >> 3) & 7) as usize;
@@ -212,7 +216,7 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let di = op & 7;
             let dt = ((op >> 3) & 7) as usize;
             let v = conv07to18(op >> 9);
-            let (dsz, dstr) = write_destination32(bus, adr + 2, dt, di);
+            let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
             ((2 + dsz) as usize, format!("subq.w #{}, {}", v, dstr))
         },
         Opcode::AndWord => {
@@ -246,6 +250,11 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let shift = conv07to18(op >> 9);
             (2, format!("asl.l #{}, {}", shift, dreg(di)))
         },
+        Opcode::LsrImWord => {
+            let di = op & 7;
+            let shift = conv07to18(op >> 9);
+            (2, format!("lsr.w #{}, {}", shift, dreg(di)))
+        },
         Opcode::RorWord => {
             let di = op & 7;
             let si = conv07to18(op >> 9);
@@ -256,10 +265,15 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let si = conv07to18(op >> 9);
             (2, format!("rol.b #{}, {}", si, dreg(di)))
         },
+        Opcode::Bra => { bcond(bus, adr + 2, op, "bra") },
         Opcode::Bcc => { bcond(bus, adr + 2, op, "bcc") },
         Opcode::Bcs => { bcond(bus, adr + 2, op, "bcs") },
         Opcode::Bne => { bcond(bus, adr + 2, op, "bne") },
         Opcode::Beq => { bcond(bus, adr + 2, op, "beq") },
+        Opcode::Bge => { bcond(bus, adr + 2, op, "bge") },
+        Opcode::Blt => { bcond(bus, adr + 2, op, "blt") },
+        Opcode::Bgt => { bcond(bus, adr + 2, op, "bgt") },
+        Opcode::Ble => { bcond(bus, adr + 2, op, "ble") },
         Opcode::Dbra => {
             let si = op & 7;
             let ofs = bus.read16(adr + 2) as SWord;
@@ -456,6 +470,9 @@ fn write_destination16<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word
         3 => {
             (0, apostinc(n))
         },
+        4 => {
+            (0, apredec(n))
+        },
         5 => {  // move.w xx, (123, An)
             let ofs = bus.read16(adr) as SWord;
             (2, format!("({}, {})", ofs, areg(n)))
@@ -484,6 +501,9 @@ fn write_destination32<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word
         },
         1 => {  // move.l xx, An
             (0, areg(n))
+        },
+        2 => {  // move.l xx, (An)
+            (0, aind(n))
         },
         3 => {
             (0, apostinc(n))

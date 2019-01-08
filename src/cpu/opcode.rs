@@ -18,6 +18,7 @@ pub(crate) enum Opcode {
     LeaOffsetD,          // lea (xx, As, Dt), Ad
     LeaOffsetPc,         // lea (xx, PC), Ad
     Clr,                 // clr xx
+    Swap,                // swap Dd
     CmpByte,             // cmp.b XX, YY
     CmpWord,             // cmp.w XX, YY
     CmpaLong,            // cmpa.l XX, Ad
@@ -36,12 +37,18 @@ pub(crate) enum Opcode {
     AndiWord,            // andi.w #xx, YY
     AslImWord,           // asl.w #n, Dd
     AslImLong,           // asl.l #n, Dd
+    LsrImWord,           // lsr.w #n, Dd
     RorWord,             // ror.w XX, Dd
     RolByte,             // rol.b XX, Dd
+    Bra,                 // bra $xxxx
     Bcc,                 // bcc $xxxx
     Bcs,                 // bcs $xxxx
     Bne,                 // bne $xxxx
     Beq,                 // beq $xxxx
+    Bge,                 // bge $xxxx
+    Blt,                 // blt $xxxx
+    Bgt,                 // bgt $xxxx
+    Ble,                 // ble $xxxx
     Dbra,                // dbra $xxxx
     Bsr,                 // bsr $xxxx
     JsrA,                // jsr (Ax) or jsr ($ooo, Ax)
@@ -100,6 +107,7 @@ lazy_static! {
         mask_inst(&mut m, 0xffc0, 0x4200, &Inst {op: Opcode::Clr});  // 4200-423f: clr.b
         mask_inst(&mut m, 0xffc0, 0x4240, &Inst {op: Opcode::Clr});  // 4240-427f: clr.w
         mask_inst(&mut m, 0xffc0, 0x4280, &Inst {op: Opcode::Clr});  // 4280-42bf: clr.l
+        mask_inst(&mut m, 0xfff8, 0x4840, &Inst {op: Opcode::Swap});  // 4840-4847
         mask_inst(&mut m, 0xfff8, 0x48e0, &Inst {op: Opcode::MovemFrom});  // 48e0-48e7
         mask_inst(&mut m, 0xffc0, 0x4a00, &Inst {op: Opcode::TstByte});  // 4a00-4a3f
         mask_inst(&mut m, 0xffc0, 0x4a40, &Inst {op: Opcode::TstWord});  // 4a40-4a7f
@@ -113,11 +121,16 @@ lazy_static! {
             range_inst(&mut m, &mut ((0x5140 + o)..(0x517a + o)), &Inst {op: Opcode::SubqWord});  // 5140...517a, 5340...537a, ..., 5f7a
         }
         mask_inst(&mut m, 0xfff8, 0x51c8, &Inst {op: Opcode::Dbra});  // 51c8-51cf
+        mask_inst(&mut m, 0xff00, 0x6000, &Inst {op: Opcode::Bra});  // 6000-60ff
         mask_inst(&mut m, 0xff00, 0x6100, &Inst {op: Opcode::Bsr});  // 6100-61ff
         mask_inst(&mut m, 0xff00, 0x6400, &Inst {op: Opcode::Bcc});  // 6400-64ff
         mask_inst(&mut m, 0xff00, 0x6500, &Inst {op: Opcode::Bcs});  // 6500-65ff
         mask_inst(&mut m, 0xff00, 0x6600, &Inst {op: Opcode::Bne});  // 6600-66ff
         mask_inst(&mut m, 0xff00, 0x6700, &Inst {op: Opcode::Beq});  // 6700-67ff
+        mask_inst(&mut m, 0xff00, 0x6c00, &Inst {op: Opcode::Bge});  // 6c00-6cff
+        mask_inst(&mut m, 0xff00, 0x6d00, &Inst {op: Opcode::Blt});  // 6d00-6dff
+        mask_inst(&mut m, 0xff00, 0x6e00, &Inst {op: Opcode::Bgt});  // 6e00-6eff
+        mask_inst(&mut m, 0xff00, 0x6f00, &Inst {op: Opcode::Ble});  // 6f00-6fff
         mask_inst(&mut m, 0xf100, 0x7000, &Inst {op: Opcode::Moveq});  // 7000...70ff, 7200...72ff, ..., 7eff
         mask_inst(&mut m, 0xf1c0, 0x91c0, &Inst {op: Opcode::SubaLong});  // 91c0, 91c1, 93c0, ..., 9fff
         mask_inst(&mut m, 0xf1c0, 0xb000, &Inst {op: Opcode::CmpByte});  // b000-b03f, b200-b23f, ..., be3f
@@ -129,6 +142,7 @@ lazy_static! {
         mask_inst(&mut m, 0xf1c0, 0xd080, &Inst {op: Opcode::AddLong});  // d080, d081, d280, ..., de87
         mask_inst(&mut m, 0xf1c0, 0xd1c0, &Inst {op: Opcode::AddaLong});  // d1c8, d1c9, d3c8, ..., dfff
         mask_inst(&mut m, 0xf1f8, 0xe058, &Inst {op: Opcode::RorWord});  // e058-e05f, e258-e25f, ..., ee58-ee5f
+        mask_inst(&mut m, 0xf1f8, 0xe048, &Inst {op: Opcode::LsrImWord});  // e048-e04f, e248-e24f, ..., ee48-ee4f
         mask_inst(&mut m, 0xf1f8, 0xe118, &Inst {op: Opcode::RolByte});  // e118-e11f, e318-e31f, ..., ef18-ef1f
         mask_inst(&mut m, 0xf1f8, 0xe140, &Inst {op: Opcode::AslImWord});  // e140-e147, e340-e347, ..., ef40-ef47
         mask_inst(&mut m, 0xf1f8, 0xe180, &Inst {op: Opcode::AslImLong});  // e180-e187, e380-e387, ..., ef80-ef87
