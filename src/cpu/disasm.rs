@@ -163,6 +163,18 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let di = (op >> 9) & 7;
             (2, format!("cmpm.b {}, {}", apostinc(si), apostinc(di)))
         },
+        Opcode::Cmp2Byte => {
+            let word2 = bus.read16(adr + 2);
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (word2 >> 12) & 15;
+            let (ssz, sstr) = read_source8(bus, adr + 4, st, si);
+            if di < 8 {
+                ((4 + ssz) as usize, format!("cmp2.b {}, {}", sstr, dreg(di)))
+            } else {
+                ((4 + ssz) as usize, format!("cmp2.b {}, {}", sstr, areg(di - 8)))
+            }
+        },
         Opcode::TstByte => {
             let si = op & 7;
             let st = ((op >> 3) & 7) as usize;
@@ -180,6 +192,13 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let st = ((op >> 3) & 7) as usize;
             let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
             ((2 + ssz) as usize, format!("tst.l {}", sstr))
+        },
+        Opcode::BsetIm => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let bit = bus.read16(adr + 2);
+            let (ssz, sstr) = read_source16(bus, adr + 4, st, si);
+            ((4 + ssz) as usize, format!("bset #{}, {}", bit, sstr))
         },
         Opcode::Reset => {
             (2, "reset".to_string())

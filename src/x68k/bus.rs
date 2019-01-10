@@ -36,7 +36,7 @@ impl BusTrait for Bus {
             // TODO: Implement.
         } else if 0xe8a000 <= adr && adr <= 0xe8bfff {  // Printer
             // TODO: Implement.
-        } else if 0xe8e00d == adr {  // ?
+        } else if 0xe8e000 <= adr && adr <= 0xe8efff {  // I/O port
             // TODO: Implement.
         } else if 0xe9a000 <= adr && adr <= 0xe9bfff {  // i8255
             // TODO: Implement.

@@ -23,10 +23,11 @@ pub(crate) enum Opcode {
     CmpWord,             // cmp.w XX, YY
     CmpaLong,            // cmpa.l XX, Ad
     CmpmByte,            // cmpm.b (Am)+, (An)+
+    Cmp2Byte,            // cmp2.b XX, Dd
     TstByte,             // tst.b xx
     TstWord,             // tst.w xx
     TstLong,             // tst.l xx
-    Reset,               // reset
+    BsetIm,              // bset #xx, YY
     AddLong,             // add.l XX, Dd
     AddaLong,            // adda.l XX, Ad
     AddqLong,            // addq.l #%d, D%d
@@ -55,6 +56,7 @@ pub(crate) enum Opcode {
     Rts,                 // rts
     Rte,                 // rte
     Trap,                // trap #x
+    Reset,               // reset
 }
 
 #[derive(Clone)]
@@ -91,7 +93,8 @@ fn range_inst(m: &mut Vec<&Inst>, range: &mut std::ops::Range<Word>, inst: &'sta
 lazy_static! {
     pub(crate) static ref INST: Vec<&'static Inst> = {
         let mut m = vec![&Inst {op: Opcode::Unknown}; 0x10000];
-        mask_inst(&mut m, 0xffc0, 0x240, &Inst {op: Opcode::AndiWord});  // 0240-027f
+        mask_inst(&mut m, 0xffc0, 0x0240, &Inst {op: Opcode::AndiWord});  // 0240-027f
+        mask_inst(&mut m, 0xffc0, 0x08c0, &Inst {op: Opcode::BsetIm});  // 08c0-08ff
         mask_inst(&mut m, 0xf000, 0x1000, &Inst {op: Opcode::MoveByte});  // 1000-1fff
         mask_inst(&mut m, 0xf000, 0x2000, &Inst {op: Opcode::MoveLong});  // 2000-2fff
         mask_inst(&mut m, 0xf000, 0x3000, &Inst {op: Opcode::MoveWord});  // 3000-3fff
@@ -133,6 +136,7 @@ lazy_static! {
         mask_inst(&mut m, 0xff00, 0x6f00, &Inst {op: Opcode::Ble});  // 6f00-6fff
         mask_inst(&mut m, 0xf100, 0x7000, &Inst {op: Opcode::Moveq});  // 7000...70ff, 7200...72ff, ..., 7eff
         mask_inst(&mut m, 0xf1c0, 0x91c0, &Inst {op: Opcode::SubaLong});  // 91c0, 91c1, 93c0, ..., 9fff
+        mask_inst(&mut m, 0xfff8, 0x00e8, &Inst {op: Opcode::Cmp2Byte});  // 00e8-00ef
         mask_inst(&mut m, 0xf1c0, 0xb000, &Inst {op: Opcode::CmpByte});  // b000-b03f, b200-b23f, ..., be3f
         mask_inst(&mut m, 0xf1c0, 0xb040, &Inst {op: Opcode::CmpWord});  // b040-b07f, b240-b27f, ..., be7f
         mask_inst(&mut m, 0xf1f8, 0xb108, &Inst {op: Opcode::CmpmByte});  // b108, b109, b308, ..., bf0f

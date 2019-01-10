@@ -115,10 +115,10 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 self.a[di] = p;
             },
             Opcode::MovemTo => {
-                let si = (op & 7) as usize;
+                let di = (op & 7) as usize;
                 let bits = self.read16(self.pc);
                 self.pc += 2;
-                let mut p = self.a[si];
+                let mut p = self.a[di];
                 for i in 0..8 {
                     if (bits & (0x8000 >> i)) != 0 {
                         self.d[i] = self.read32(p);
@@ -131,7 +131,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
                         p += 4;
                     }
                 }
-                self.a[si] = p;
+                self.a[di] = p;
             },
             Opcode::MoveToSrIm => {
                 self.sr = self.read16(self.pc);
@@ -243,8 +243,29 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let val = self.read_source32(st, si) as SLong;
                 self.set_tst_sr(val == 0, val < 0)
             },
-            Opcode::Reset => {
-                // TODO: Implement.
+            Opcode::BsetIm => {
+                let si = op & 7;
+                let st = ((op >> 3) & 7) as usize;
+                let bit = self.read16(self.pc);
+                self.pc += 2;
+                match op & 0x38 {
+                    0x38 => {
+                        match op {
+                            0x08f9 => {  // bsete #3, $456789ab.l
+                                let adr = self.read32(self.pc);
+                                self.pc += 4;
+                                let v = self.read8(adr);
+                                self.write8(adr, v | (1 << (bit & 7)));
+                            },
+                            _ => {
+                                panic!("BsetIm not implemented: {:04x}", op);
+                            },
+                        }
+                    },
+                    _ => {
+                        panic!("BsetIm not implemented: {:04x}", op);
+                    },
+                }
             },
             Opcode::AddLong => {
                 let si = (op & 7) as usize;
@@ -384,6 +405,9 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let adr = self.read32(TRAP_VECTOR_START + (no * 4) as u32);
                 self.push32(self.pc);
                 self.pc = adr;
+            },
+            Opcode::Reset => {
+                // TODO: Implement.
             },
             _ => {
                 eprintln!("{:08x}: {:04x}  ; Unknown opcode", startadr, op);
