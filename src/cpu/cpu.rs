@@ -126,7 +126,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
                     }
                 }
                 for i in 0..8 {
-                    if (bits & (0x0080 << i)) != 0 {
+                    if (bits & (0x0080 >> i)) != 0 {
                         self.a[i] = self.read32(p);
                         p += 4;
                     }
@@ -244,8 +244,6 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 self.set_tst_sr(val == 0, val < 0)
             },
             Opcode::BsetIm => {
-                let si = op & 7;
-                let st = ((op >> 3) & 7) as usize;
                 let bit = self.read16(self.pc);
                 self.pc += 2;
                 match op & 0x38 {
@@ -300,7 +298,26 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let st = ((op >> 3) & 7) as usize;
                 let v = conv07to18(op >> 9);
                 let src = self.read_source16_incpc(st, si, false);
-                self.write_destination16(st, si, src.wrapping_sub(v));
+                let val = src.wrapping_sub(v);
+                self.write_destination16(st, si, val);
+
+                // TODO: Update all flags
+                let mut sr = self.sr & !FLAG_Z;
+                if val == 0 { sr |= FLAG_Z };
+                self.sr = sr;
+            },
+            Opcode::SubqLong => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let v = conv07to18(op >> 9);
+                let src = self.read_source32_incpc(st, si, false);
+                let val = src.wrapping_sub(v as u32);
+                self.write_destination32(st, si, val);
+
+                // TODO: Update all flags
+                let mut sr = self.sr & !FLAG_Z;
+                if val == 0 { sr |= FLAG_Z };
+                self.sr = sr;
             },
             Opcode::AndWord => {
                 let si = (op & 7) as usize;

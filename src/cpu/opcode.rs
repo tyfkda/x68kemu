@@ -33,6 +33,7 @@ pub(crate) enum Opcode {
     AddqLong,            // addq.l #%d, D%d
     SubaLong,            // suba.l As, Ad
     SubqWord,            // subq.w #%d, D%d
+    SubqLong,            // subq.l #%d, D%d
     AndWord,             // and.w XX, Dd
     AndLong,             // and.l XX, Dd
     AndiWord,            // andi.w #xx, YY
@@ -122,6 +123,7 @@ lazy_static! {
             let o = i * 0x0200;
             range_inst(&mut m, &mut ((0x5080 + o)..(0x50ba + o)), &Inst {op: Opcode::AddqLong});  // 5080...50ba, 5280...52ba, ..., 5eba
             range_inst(&mut m, &mut ((0x5140 + o)..(0x517a + o)), &Inst {op: Opcode::SubqWord});  // 5140...517a, 5340...537a, ..., 5f7a
+            range_inst(&mut m, &mut ((0x5180 + o)..(0x51ba + o)), &Inst {op: Opcode::SubqLong});  // 5180...51ba, 5380...53ba, ..., 5fba
         }
         mask_inst(&mut m, 0xfff8, 0x51c8, &Inst {op: Opcode::Dbra});  // 51c8-51cf
         mask_inst(&mut m, 0xff00, 0x6000, &Inst {op: Opcode::Bra});  // 6000-60ff

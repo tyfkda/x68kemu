@@ -238,6 +238,13 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
             ((2 + dsz) as usize, format!("subq.w #{}, {}", v, dstr))
         },
+        Opcode::SubqLong => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let v = conv07to18(op >> 9);
+            let (dsz, dstr) = write_destination32(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("subq.l #{}, {}", v, dstr))
+        },
         Opcode::AndWord => {
             let si = op & 7;
             let st = ((op >> 3) & 7) as usize;
