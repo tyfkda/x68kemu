@@ -373,6 +373,11 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 self.d[di] = replace_byte(self.d[di], (b << si) | (b >> (8 - si)));
                 // TODO: Set SR.
             },
+            Opcode::ExtWord => {
+                let di = (op & 7) as usize;
+                let src = self.d[di];
+                self.d[di] = replace_word(src, src as SByte as SWord as Word);
+            },
             Opcode::Bra => { self.bcond(op, true); },
             Opcode::Bcc => { self.bcond(op, (self.sr & FLAG_C) == 0); },
             Opcode::Bcs => { self.bcond(op, (self.sr & FLAG_C) != 0); },

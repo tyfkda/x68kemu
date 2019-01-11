@@ -291,6 +291,10 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
             let si = conv07to18(op >> 9);
             (2, format!("rol.b #{}, {}", si, dreg(di)))
         },
+        Opcode::ExtWord => {
+            let di = op & 7;
+            (2, format!("ext.w {}", dreg(di)))
+        },
         Opcode::Bra => { bcond(bus, adr + 2, op, "bra") },
         Opcode::Bcc => { bcond(bus, adr + 2, op, "bcc") },
         Opcode::Bcs => { bcond(bus, adr + 2, op, "bcs") },

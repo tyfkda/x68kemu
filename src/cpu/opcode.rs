@@ -42,6 +42,7 @@ pub(crate) enum Opcode {
     LsrImWord,           // lsr.w #n, Dd
     RorWord,             // ror.w XX, Dd
     RolByte,             // rol.b XX, Dd
+    ExtWord,             // ext.w Dd
     Bra,                 // bra $xxxx
     Bcc,                 // bcc $xxxx
     Bcs,                 // bcs $xxxx
@@ -112,6 +113,7 @@ lazy_static! {
         mask_inst(&mut m, 0xffc0, 0x4240, &Inst {op: Opcode::Clr});  // 4240-427f: clr.w
         mask_inst(&mut m, 0xffc0, 0x4280, &Inst {op: Opcode::Clr});  // 4280-42bf: clr.l
         mask_inst(&mut m, 0xfff8, 0x4840, &Inst {op: Opcode::Swap});  // 4840-4847
+        mask_inst(&mut m, 0xfff8, 0x4880, &Inst {op: Opcode::ExtWord});  // 4880-4887
         mask_inst(&mut m, 0xfff8, 0x48e0, &Inst {op: Opcode::MovemFrom});  // 48e0-48e7
         mask_inst(&mut m, 0xffc0, 0x4a00, &Inst {op: Opcode::TstByte});  // 4a00-4a3f
         mask_inst(&mut m, 0xffc0, 0x4a40, &Inst {op: Opcode::TstWord});  // 4a40-4a7f
