@@ -14,6 +14,12 @@ impl BusTrait for Bus {
         } else if 0xe80000 <= adr && adr <= 0xe80030 {  // CRTC
             // TODO: Implement.
             return 0;
+        } else if 0xe88000 <= adr && adr <= 0xe89fff {  // MFP
+            // TODO: Implement.
+            match adr {
+                0xe8802d => 0x80,  // Transmittance Status Register.
+                _ => 0,
+            }
         } else if 0xed0000 <= adr && adr <= 0xed3fff {
             self.sram[(adr - 0xed0000) as usize]
         } else if 0xfe0000 <= adr && adr <= 0xffffff {

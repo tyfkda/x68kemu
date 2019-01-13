@@ -41,6 +41,11 @@ impl <BusT: BusTrait> Cpu<BusT> {
         self.pc = self.read32(0xff0004);
     }
 
+    #[allow(dead_code)]
+    pub fn set_pc(&mut self, pc: Adr) {
+        self.pc = pc;
+    }
+
     pub fn run(&mut self) {
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             loop {
@@ -243,13 +248,28 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let val = self.read_source32(st, si) as SLong;
                 self.set_tst_sr(val == 0, val < 0)
             },
+            Opcode::BtstIm => {
+                let bit = self.read16(self.pc);
+                self.pc += 2;
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                if st < 2 {  // Data or address register: 32bit.
+                    let val = self.read_source32(st, si);
+                    let zero = (val & (1 << (bit & 31))) == 0;
+                    self.sr = (self.sr & !FLAG_Z) | (if zero {FLAG_Z} else {0});
+                } else {  // Memory: 8bit.
+                    let val = self.read_source8(st, si);
+                    let zero = (val & (1 << (bit & 7))) == 0;
+                    self.sr = (self.sr & !FLAG_Z) | (if zero {FLAG_Z} else {0});
+                }
+            },
             Opcode::BsetIm => {
                 let bit = self.read16(self.pc);
                 self.pc += 2;
                 match op & 0x38 {
                     0x38 => {
                         match op {
-                            0x08f9 => {  // bsete #3, $456789ab.l
+                            0x08f9 => {  // bset #3, $456789ab.l
                                 let adr = self.read32(self.pc);
                                 self.pc += 4;
                                 let v = self.read8(adr);
@@ -319,12 +339,21 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 if val == 0 { sr |= FLAG_Z };
                 self.sr = sr;
             },
+            Opcode::AndByte => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source8(st, si);
+                self.d[di] = replace_byte(self.d[di], (self.d[di] as Byte) & src);
+                // TODO: Update all flags
+            },
             Opcode::AndWord => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source16(st, si);
                 self.d[di] = replace_word(self.d[di], (self.d[di] as Word) & src);
+                // TODO: Update all flags
             },
             Opcode::AndLong => {
                 let si = (op & 7) as usize;
@@ -332,14 +361,65 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source32(st, si);
                 self.d[di] &= src;
+                // TODO: Update all flags
             },
             Opcode::AndiWord => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
                 let v = self.read16(self.pc);
                 self.pc += 2;
-                let src = self.read_source16(dt, di);
+                let src = self.read_source16_incpc(dt, di, false);
                 self.write_destination16(dt, di, src & v);
+                // TODO: Update all flags
+            },
+            Opcode::OrByte => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source8(st, si);
+                self.d[di] = replace_byte(self.d[di], (self.d[di] as Byte) | src);
+                // TODO: Update all flags
+            },
+            Opcode::OrWord => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source16(st, si);
+                self.d[di] = replace_word(self.d[di], (self.d[di] as Word) | src);
+                // TODO: Update all flags
+            },
+            Opcode::OriByte => {
+                let di = (op & 7) as usize;
+                let dt = ((op >> 3) & 7) as usize;
+                let v = self.read16(self.pc) as Byte;
+                self.pc += 2;
+                let src = self.read_source8_incpc(dt, di, false);
+                self.write_destination8(dt, di, src | v);
+                // TODO: Update all flags
+            },
+            Opcode::OriWord => {
+                let di = (op & 7) as usize;
+                let dt = ((op >> 3) & 7) as usize;
+                let v = self.read16(self.pc);
+                self.pc += 2;
+                let src = self.read_source16_incpc(dt, di, false);
+                self.write_destination16(dt, di, src | v);
+                // TODO: Update all flags
+            },
+            Opcode::EoriByte => {
+                let di = (op & 7) as usize;
+                let dt = ((op >> 3) & 7) as usize;
+                let v = self.read16(self.pc) as Byte;
+                self.pc += 2;
+                let src = self.read_source8_incpc(dt, di, false);
+                self.write_destination8(dt, di, src ^ v);
+                // TODO: Update all flags
+            },
+            Opcode::AslImByte => {
+                let di = (op & 7) as usize;
+                let shift = conv07to18(op >> 9);
+                self.d[di] = replace_byte(self.d[di], (self.d[di] as Byte) << shift);
+                // TODO: Set SR.
             },
             Opcode::AslImWord => {
                 let di = (op & 7) as usize;
@@ -485,9 +565,13 @@ impl <BusT: BusTrait> Cpu<BusT> {
                         self.read8(adr)
                     },
                     4 => {  // move.b #$XXXX, xx
-                        let value = self.read16(self.pc);
-                        if incpc { self.pc += 2; }
-                        (value & 0xff) as u8
+                        if incpc {
+                            let value = self.read16(self.pc);
+                            if incpc { self.pc += 2; }
+                            (value & 0xff) as u8
+                        } else {
+                            panic!("Not implemented, m={}", m);
+                        }
                     },
                     _ => {
                         panic!("Not implemented, m={}", m);
@@ -530,9 +614,13 @@ impl <BusT: BusTrait> Cpu<BusT> {
                         self.read16(adr)
                     },
                     4 => {  // move.w #$XXXX, xx
-                        let value = self.read16(self.pc);
-                        if incpc { self.pc += 2; }
-                        value
+                        if incpc {
+                            let value = self.read16(self.pc);
+                            self.pc += 2;
+                            value
+                        } else {
+                            self.sr
+                        }
                     },
                     _ => {
                         panic!("Not implemented, m={}", m);
@@ -578,9 +666,13 @@ impl <BusT: BusTrait> Cpu<BusT> {
                         self.read32(adr)
                     },
                     4 => {  // move.l #$XXXX, xx
-                        let value = self.read32(self.pc);
-                        if incpc { self.pc += 4; }
-                        value
+                        if incpc {
+                            let value = self.read32(self.pc);
+                            self.pc += 4;
+                            value
+                        } else {
+                            panic!("Not implemented, m={}", m);
+                        }
                     },
                     _ => {
                         panic!("Not implemented, m={}", m);
@@ -607,6 +699,21 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let ofs = self.read16(self.pc) as SWord;
                 self.pc += 2;
                 self.write8((self.a[n] as SLong + ofs as SLong) as Adr, value);
+            },
+            6 => {  // Memory Indirect Pre-indexed: move.b xx, (123, An, Dx)
+                let extension = self.read16(self.pc);
+                self.pc += 2;
+                if (extension & 0x100) != 0 {
+                    panic!("Not implemented, dst={}", dst);
+                } else {
+                    let ofs = extension as SByte as SLong;
+                    let da = (extension & 0x8000) != 0;  // Displacement is address register?
+                    let dr = ((extension >> 12) & 7) as usize;  // Displacement register.
+                    let dl = (extension & 0x0800) != 0;  // Displacement long?
+                    let regofs = if dl { (if da {self.a[dr]} else {self.d[dr]}) as SLong } else { (if da {self.a[dr]} else {self.d[dr]}) as SWord as SLong };
+                    let adr = (ofs + (self.a[n] as SLong) + regofs) as Long;
+                    self.write8(adr, value);
+                }
             },
             7 => {
                 match n {
@@ -658,6 +765,9 @@ impl <BusT: BusTrait> Cpu<BusT> {
                         let d = self.read32(self.pc);
                         self.pc += 4;
                         self.write16(d, value);
+                    },
+                    4 => {
+                        self.sr = value;
                     },
                     _ => {
                         panic!("Not implemented, n={}", n);
