@@ -18,7 +18,7 @@ fn aind(no: Word) -> String { AINDIRECT_NAMES[no as usize].to_string() }
 fn apostinc(no: Word) -> String { APOSTINC_NAMES[no as usize].to_string() }
 fn apredec(no: Word) -> String { APREDEC_NAMES[no as usize].to_string() }
 
-pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
+pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String) {
     let op = bus.read16(adr);
     let inst = &INST[op as usize];
 
@@ -394,13 +394,13 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &BusT, adr: Adr) -> (usize, String) {
     }
 }
 
-fn bcond<BusT: BusTrait>(bus: &BusT, adr: Adr, op: Word, bname: &str) -> (usize, String) {
+fn bcond<BusT: BusTrait>(bus: &mut BusT, adr: Adr, op: Word, bname: &str) -> (usize, String) {
     let (ofs, sz) = get_branch_offset(op, bus, adr);
     let jmp = (adr as SLong).wrapping_add(ofs) as Long;
     ((2 + sz) as usize, format!("{} ${:06x}", bname, jmp))
 }
 
-fn read_source8<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {
+fn read_source8<BusT: BusTrait>(bus: &mut BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         0 => {  // move.b Dm, xx
             (0, dreg(m))
@@ -436,7 +436,7 @@ fn read_source8<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> (
     }
 }
 
-fn read_source16<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {
+fn read_source16<BusT: BusTrait>(bus: &mut BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         0 => {  // move.w Dm, xx
             (0, dreg(m))
@@ -472,7 +472,7 @@ fn read_source16<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> 
     }
 }
 
-fn read_source32<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {
+fn read_source32<BusT: BusTrait>(bus: &mut BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {
     match src {
         0 => {  // move.l Dm, xx
             (0, dreg(m))
@@ -511,7 +511,7 @@ fn read_source32<BusT: BusTrait>(bus: &BusT, adr: Adr,  src: usize, m: Word) -> 
     }
 }
 
-fn write_destination8<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word) -> (u32, String) {
+fn write_destination8<BusT: BusTrait>(bus: &mut BusT, adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
             (0, dreg(n))
@@ -552,7 +552,7 @@ fn write_destination8<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word)
     }
 }
 
-fn write_destination16<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word) -> (u32, String) {
+fn write_destination16<BusT: BusTrait>(bus: &mut BusT, adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
             (0, dreg(n))
@@ -593,7 +593,7 @@ fn write_destination16<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word
     }
 }
 
-fn write_destination32<BusT: BusTrait>(bus: &BusT, adr: Adr, dst: usize, n: Word) -> (u32, String) {
+fn write_destination32<BusT: BusTrait>(bus: &mut BusT, adr: Adr, dst: usize, n: Word) -> (u32, String) {
     match dst {
         0 => {
             (0, dreg(n))

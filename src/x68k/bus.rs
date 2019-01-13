@@ -5,12 +5,21 @@ pub struct Bus {
     mem: Vec<Byte>,
     sram: Vec<Byte>,
     ipl: Vec<Byte>,
+    booting: bool,
 }
 
 impl BusTrait for Bus {
-    fn read8(&self, adr: Adr) -> Byte {
+    fn reset(&mut self) {
+        self.booting = true;
+    }
+
+    fn read8(&mut self, adr: Adr) -> Byte {
         if /*0x000000 <= adr &&*/ adr <= 0xffff {
-            self.mem[adr as usize]
+            if self.booting {
+                self.ipl[(adr + 0x10000) as usize]
+            } else {
+                self.mem[adr as usize]
+            }
         } else if 0xe80000 <= adr && adr <= 0xe80030 {  // CRTC
             // TODO: Implement.
             return 0;
@@ -23,6 +32,9 @@ impl BusTrait for Bus {
         } else if 0xed0000 <= adr && adr <= 0xed3fff {
             self.sram[(adr - 0xed0000) as usize]
         } else if 0xfe0000 <= adr && adr <= 0xffffff {
+            if adr >= 0xff0000 {
+                self.booting = false;
+            }
             self.ipl[(adr - 0xfe0000) as usize]
         } else {
             panic!("Illegal address: {:08x}", adr);
@@ -84,6 +96,7 @@ impl Bus {
             mem: vec![0; 0x10000],
             sram: vec![0; 0x4000],
             ipl: ipl,
+            booting: true,
         }
     }
 }

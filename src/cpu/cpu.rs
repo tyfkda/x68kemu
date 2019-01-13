@@ -36,9 +36,10 @@ impl <BusT: BusTrait> Cpu<BusT> {
     }
 
     pub fn reset(&mut self) {
+        self.bus.reset();
         self.sr = 0;
-        self.a[SP] = self.read32(0xff0000);
-        self.pc = self.read32(0xff0004);
+        self.a[SP] = self.read32(0x000000);
+        self.pc = self.read32(0x000004);
     }
 
     #[allow(dead_code)]
@@ -49,8 +50,8 @@ impl <BusT: BusTrait> Cpu<BusT> {
     pub fn run(&mut self) {
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             loop {
-                let (sz, mnemonic) = disasm(&self.bus, self.pc);
-                println!("{:06x}: {}  {}", self.pc, dump_mem(&self.bus, self.pc, sz, 5), mnemonic);
+                let (sz, mnemonic) = disasm(&mut self.bus, self.pc);
+                println!("{:06x}: {}  {}", self.pc, dump_mem(&mut self.bus, self.pc, sz, 5), mnemonic);
                 self.step();
             }
         }));
@@ -477,7 +478,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 self.pc = if w != 0xffff { (self.pc as SLong).wrapping_add(ofs as SLong) as Adr } else { self.pc + 2 }
             },
             Opcode::Bsr => {
-                let (ofs, sz) = get_branch_offset(op, &self.bus, self.pc);
+                let (ofs, sz) = get_branch_offset(op, &mut self.bus, self.pc);
                 self.pc += sz;
                 self.push32(self.pc);
                 self.pc = ((startadr + 2) as i32 + ofs as i32) as u32;
@@ -519,7 +520,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
     }
 
     fn bcond(&mut self, op: Word, cond: bool) {
-        let (ofs, sz) = get_branch_offset(op, &self.bus, self.pc);
+        let (ofs, sz) = get_branch_offset(op, &mut self.bus, self.pc);
         self.pc = if cond { (self.pc as SLong).wrapping_add(ofs) as Adr } else { self.pc + sz };
     }
 
@@ -851,15 +852,15 @@ impl <BusT: BusTrait> Cpu<BusT> {
         self.sr = sr;
     }
 
-    fn read8(&self, adr: Adr) -> Byte {
+    fn read8(&mut self, adr: Adr) -> Byte {
         self.bus.read8(adr)
     }
 
-    fn read16(&self, adr: Adr) -> Word {
+    fn read16(&mut self, adr: Adr) -> Word {
         self.bus.read16(adr)
     }
 
-    fn read32(&self, adr: Adr) -> Long {
+    fn read32(&mut self, adr: Adr) -> Long {
         self.bus.read32(adr)
     }
 
@@ -876,7 +877,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
     }
 }
 
-pub fn get_branch_offset<BusT: BusTrait>(op: Word, bus: &BusT, adr: Adr) -> (SLong, u32) {
+pub fn get_branch_offset<BusT: BusTrait>(op: Word, bus: &mut BusT, adr: Adr) -> (SLong, u32) {
     let ofs = op & 0x00ff;
     match ofs {
         0 => {
@@ -928,7 +929,7 @@ fn test_replace_word() {
     assert_eq!(0x1234abcd, replace_word(0x12345678, 0xabcd));
 }
 
-fn dump_mem<BusT: BusTrait>(bus: &BusT, adr: Adr, sz: usize, max: usize) -> String {
+fn dump_mem<BusT: BusTrait>(bus: &mut BusT, adr: Adr, sz: usize, max: usize) -> String {
     let arr = (0..max).map(|i| {
         if i * 2 < sz {
             format!("{:04x}", bus.read16(adr + (i as u32) * 2))
