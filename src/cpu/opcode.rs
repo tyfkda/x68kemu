@@ -25,6 +25,7 @@ pub(crate) enum Opcode {
     Swap,                // swap Dd
     CmpByte,             // cmp.b XX, YY
     CmpWord,             // cmp.w XX, YY
+    CmpiByte,            // cmpi.b #xx, YY
     CmpiWord,            // cmpi.w #xx, YY
     CmpaLong,            // cmpa.l XX, Ad
     CmpmByte,            // cmpm.b (Am)+, (An)+
@@ -36,14 +37,21 @@ pub(crate) enum Opcode {
     BclrIm,              // bclr #xx, YY
     Bset,                // bset Ds, YY
     BsetIm,              // bset #xx, YY
+    AddByte,             // add.b XX, Dd
     AddWord,             // add.w XX, Dd
     AddLong,             // add.l XX, Dd
+    AddiByte,            // addi.b XX, Dd
     AddaLong,            // adda.l XX, Ad
+    AddqByte,            // addq.b #%d, D%d
     AddqWord,            // addq.w #%d, D%d
     AddqLong,            // addq.l #%d, D%d
+    SubByte,             // sub.b XX, Dd
+    SubWord,             // sub.w XX, Dd
+    SubiByte,            // subi.b XX, Dd
     SubaLong,            // suba.l As, Ad
     SubqWord,            // subq.w #%d, D%d
     SubqLong,            // subq.l #%d, D%d
+    MuluWord,            // mulu.w XX, Dd
     AndByte,             // and.b XX, Dd
     AndWord,             // and.w XX, Dd
     AndLong,             // and.l XX, Dd
@@ -70,6 +78,8 @@ pub(crate) enum Opcode {
     Bcs,                 // bcs $xxxx
     Bne,                 // bne $xxxx
     Beq,                 // beq $xxxx
+    Bpl,                 // bpl $xxxx
+    Bmi,                 // bmi $xxxx
     Bge,                 // bge $xxxx
     Blt,                 // blt $xxxx
     Bgt,                 // bgt $xxxx
@@ -121,11 +131,14 @@ lazy_static! {
         mask_inst(&mut m, 0xffc0, 0x0040, &Inst {op: Opcode::OriWord});  // 0040-007f
         mask_inst(&mut m, 0xf1c0, 0x01c0, &Inst {op: Opcode::Bset});  // 01c0-01ff, 03c0-03ff, ..., -0fff
         mask_inst(&mut m, 0xffc0, 0x0240, &Inst {op: Opcode::AndiWord});  // 0240-027f
+        mask_inst(&mut m, 0xffc0, 0x0400, &Inst {op: Opcode::SubiByte});  // 0400-043f
+        mask_inst(&mut m, 0xffc0, 0x0600, &Inst {op: Opcode::AddiByte});  // 0600-063f
         mask_inst(&mut m, 0xffc0, 0x0800, &Inst {op: Opcode::BtstIm});  // 0800-083f
         mask_inst(&mut m, 0xffc0, 0x0880, &Inst {op: Opcode::BclrIm});  // 0880-08bf
         mask_inst(&mut m, 0xffc0, 0x08c0, &Inst {op: Opcode::BsetIm});  // 08c0-08ff
         mask_inst(&mut m, 0xffc0, 0x0a00, &Inst {op: Opcode::EoriByte});  // 0a00-0a3f
         mask_inst(&mut m, 0xffc0, 0x0a40, &Inst {op: Opcode::EoriWord});  // 0a40-0a7f
+        mask_inst(&mut m, 0xffc0, 0x0c00, &Inst {op: Opcode::CmpiByte});  // 0c00-0c3f
         mask_inst(&mut m, 0xffc0, 0x0c40, &Inst {op: Opcode::CmpiWord});  // 0c40-0c7f
         mask_inst(&mut m, 0xf000, 0x1000, &Inst {op: Opcode::MoveByte});  // 1000-1fff
         mask_inst(&mut m, 0xf000, 0x2000, &Inst {op: Opcode::MoveLong});  // 2000-2fff
@@ -155,6 +168,7 @@ lazy_static! {
         mask_inst(&mut m, 0xfff0, 0x4e90, &Inst {op: Opcode::JsrA});  // 4e90-4e9f
         for i in 0..8 {
             let o = i * 0x0200;
+            range_inst(&mut m, &mut ((0x5000 + o)..(0x503a + o)), &Inst {op: Opcode::AddqByte});  // 5000...5039, 5200...5239, ..., 5e39
             range_inst(&mut m, &mut ((0x5040 + o)..(0x507a + o)), &Inst {op: Opcode::AddqWord});  // 5040...5079, 5240...5279, ..., 5e79
             range_inst(&mut m, &mut ((0x5080 + o)..(0x50ba + o)), &Inst {op: Opcode::AddqLong});  // 5080...50b9, 5280...52b9, ..., 5eb9
             range_inst(&mut m, &mut ((0x5140 + o)..(0x517a + o)), &Inst {op: Opcode::SubqWord});  // 5140...5179, 5340...5379, ..., 5f79
@@ -167,6 +181,8 @@ lazy_static! {
         mask_inst(&mut m, 0xff00, 0x6500, &Inst {op: Opcode::Bcs});  // 6500-65ff
         mask_inst(&mut m, 0xff00, 0x6600, &Inst {op: Opcode::Bne});  // 6600-66ff
         mask_inst(&mut m, 0xff00, 0x6700, &Inst {op: Opcode::Beq});  // 6700-67ff
+        mask_inst(&mut m, 0xff00, 0x6a00, &Inst {op: Opcode::Bpl});  // 6a00-6aff
+        mask_inst(&mut m, 0xff00, 0x6b00, &Inst {op: Opcode::Bmi});  // 6b00-6bff
         mask_inst(&mut m, 0xff00, 0x6c00, &Inst {op: Opcode::Bge});  // 6c00-6cff
         mask_inst(&mut m, 0xff00, 0x6d00, &Inst {op: Opcode::Blt});  // 6d00-6dff
         mask_inst(&mut m, 0xff00, 0x6e00, &Inst {op: Opcode::Bgt});  // 6e00-6eff
@@ -174,7 +190,9 @@ lazy_static! {
         mask_inst(&mut m, 0xf100, 0x7000, &Inst {op: Opcode::Moveq});  // 7000...70ff, 7200...72ff, ..., 7eff
         mask_inst(&mut m, 0xf1c0, 0x8000, &Inst {op: Opcode::OrByte});  // 8000-803f, 8200-823f, ..., -8e3f
         mask_inst(&mut m, 0xf1c0, 0x8040, &Inst {op: Opcode::OrWord});  // 8040-807f, 8240-827f, ..., -8e7f
-        mask_inst(&mut m, 0xf1c0, 0x91c0, &Inst {op: Opcode::SubaLong});  // 91c0, 91c1, 93c0, ..., 9fff
+        mask_inst(&mut m, 0xf1c0, 0x9000, &Inst {op: Opcode::SubByte});  // 9000-903f, 9200-923f, ..., -9e3f
+        mask_inst(&mut m, 0xf1c0, 0x9040, &Inst {op: Opcode::SubWord});  // 9040-907f, 9240-927f, ..., -9e7f
+        mask_inst(&mut m, 0xf1c0, 0x91c0, &Inst {op: Opcode::SubaLong});  // 91c0-91ff, 93c0-93ff, ..., -9fff
         mask_inst(&mut m, 0xfff8, 0x00e8, &Inst {op: Opcode::Cmp2Byte});  // 00e8-00ef
         mask_inst(&mut m, 0xf1c0, 0xb000, &Inst {op: Opcode::CmpByte});  // b000-b03f, b200-b23f, ..., be3f
         mask_inst(&mut m, 0xf1c0, 0xb040, &Inst {op: Opcode::CmpWord});  // b040-b07f, b240-b27f, ..., be7f
@@ -184,6 +202,8 @@ lazy_static! {
         mask_inst(&mut m, 0xf1c0, 0xc000, &Inst {op: Opcode::AndByte});  // c000-c03f, c200-c23f, ..., -ce3f
         mask_inst(&mut m, 0xf1c0, 0xc040, &Inst {op: Opcode::AndWord});  // c040-c07f, c240-c27f, ..., -ce7f
         mask_inst(&mut m, 0xf1c0, 0xc080, &Inst {op: Opcode::AndLong});  // c080-c8bf, c280-c2bf, ..., -cebf
+        mask_inst(&mut m, 0xf1c0, 0xc0c0, &Inst {op: Opcode::MuluWord});  // c0c0-c0fff, c2c0-c2ff, ..., -ceff
+        mask_inst(&mut m, 0xf1c0, 0xd000, &Inst {op: Opcode::AddByte});  // d000-d03f, d200-d23f, ..., -de3f
         mask_inst(&mut m, 0xf1c0, 0xd040, &Inst {op: Opcode::AddWord});  // d040-d07f, d240-d27f, ..., -de7f
         mask_inst(&mut m, 0xf1c0, 0xd080, &Inst {op: Opcode::AddLong});  // d080-d0bf, d280-d2bf, ..., -debf
         mask_inst(&mut m, 0xf1c0, 0xd1c0, &Inst {op: Opcode::AddaLong});  // d1c8, d1c9, d3c8, ..., dfff

@@ -159,6 +159,13 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let (dsz, dstr) = write_destination16(bus, adr + 2 + ssz, 0, di);
             ((2 + ssz + dsz) as usize, format!("cmp.w {}, {}", sstr, dstr))
         },
+        Opcode::CmpiByte => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let val = bus.read16(adr + 2) as Byte;
+            let (dsz, dstr) = write_destination8(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("cmpi.b #${:02x}, {}", val, dstr))
+        },
         Opcode::CmpiWord => {
             let di = op & 7;
             let dt = ((op >> 3) & 7) as usize;
@@ -240,6 +247,13 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
         Opcode::Reset => {
             (2, "reset".to_string())
         },
+        Opcode::AddByte => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source8(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("add.b {}, {}", sstr, dreg(di)))
+        },
         Opcode::AddWord => {
             let si = op & 7;
             let st = ((op >> 3) & 7) as usize;
@@ -254,12 +268,26 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let (ssz, sstr) = read_source32(bus, adr + 2, st, si);
             ((2 + ssz) as usize, format!("add.l {}, {}", sstr, dreg(di)))
         },
+        Opcode::AddiByte => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let v = bus.read16(adr + 2) as Byte;
+            let (dsz, dstr) = write_destination8(bus, adr + 4, dt, di);
+            ((4 + dsz) as usize, format!("addi.b #${:02x}, {}", v, dstr))
+        },
         Opcode::AddaLong => {
             let si = op & 7;
             let st = ((op >> 3) & 7) as usize;
             let di = (op >> 9) & 7;
             let (ssz, sstr) = read_source32(bus, adr + 2, st, si);
             ((2 + ssz) as usize, format!("adda.l {}, {}", sstr, areg(di)))
+        },
+        Opcode::AddqByte => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let v = conv07to18(op >> 9);
+            let (dsz, dstr) = write_destination8(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("addq.b #{}, {}", v, dstr))
         },
         Opcode::AddqWord => {
             let di = op & 7;
@@ -274,6 +302,27 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let v = conv07to18(op >> 9);
             let (dsz, dstr) = write_destination32(bus, adr + 2, dt, di);
             ((2 + dsz) as usize, format!("addq.l #{}, {}", v, dstr))
+        },
+        Opcode::SubByte => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source8(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("sub.b {}, {}", sstr, dreg(di)))
+        },
+        Opcode::SubWord => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("sub.w {}, {}", sstr, dreg(di)))
+        },
+        Opcode::SubiByte => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let v = bus.read16(adr + 2) as Byte;
+            let (dsz, dstr) = write_destination8(bus, adr + 4, dt, di);
+            ((4 + dsz) as usize, format!("subi.b #${:02x}, {}", v, dstr))
         },
         Opcode::SubaLong => {
             let si = op & 7;
@@ -295,6 +344,13 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let v = conv07to18(op >> 9);
             let (dsz, dstr) = write_destination32(bus, adr + 2, dt, di);
             ((2 + dsz) as usize, format!("subq.l #{}, {}", v, dstr))
+        },
+        Opcode::MuluWord => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("mulu.w {}, {}", sstr, dreg(di)))
         },
         Opcode::AndByte => {
             let si = op & 7;
@@ -427,6 +483,8 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
         Opcode::Bcs => { bcond(bus, adr + 2, op, "bcs") },
         Opcode::Bne => { bcond(bus, adr + 2, op, "bne") },
         Opcode::Beq => { bcond(bus, adr + 2, op, "beq") },
+        Opcode::Bpl => { bcond(bus, adr + 2, op, "bpl") },
+        Opcode::Bmi => { bcond(bus, adr + 2, op, "bmi") },
         Opcode::Bge => { bcond(bus, adr + 2, op, "bge") },
         Opcode::Blt => { bcond(bus, adr + 2, op, "blt") },
         Opcode::Bgt => { bcond(bus, adr + 2, op, "bgt") },

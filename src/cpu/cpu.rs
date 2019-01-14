@@ -11,6 +11,7 @@ const FLAG_C: Word = 1 << 0;
 const FLAG_V: Word = 1 << 1;
 const FLAG_Z: Word = 1 << 2;
 const FLAG_N: Word = 1 << 3;
+const FLAG_X: Word = 1 << 4;
 
 const TRAP_VECTOR_START: Adr = 0x0080;
 
@@ -78,14 +79,11 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source8(st, si);
                 self.write_destination8(dt, di, src);
-            },
-            Opcode::MoveLong => {
-                let si = (op & 7) as usize;
-                let st = ((op >> 3) & 7) as usize;
-                let dt = ((op >> 6) & 7) as usize;
-                let di = ((op >> 9) & 7) as usize;
-                let src = self.read_source32(st, si);
-                self.write_destination32(dt, di, src);
+
+                let mut sr = self.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N);
+                if src == 0 { sr |= FLAG_Z };
+                if (src & 0x80) != 0 { sr |= FLAG_N };
+                self.sr = sr;
             },
             Opcode::MoveWord => {
                 let si = (op & 7) as usize;
@@ -94,12 +92,32 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source16(st, si);
                 self.write_destination16(dt, di, src);
+
+                let mut sr = self.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N);
+                if src == 0 { sr |= FLAG_Z };
+                if (src & 0x8000) != 0 { sr |= FLAG_N };
+                self.sr = sr;
+            },
+            Opcode::MoveLong => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let dt = ((op >> 6) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source32(st, si);
+                self.write_destination32(dt, di, src);
+
+                let mut sr = self.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N);
+                if src == 0 { sr |= FLAG_Z };
+                if (src & 0x80000000) != 0 { sr |= FLAG_N };
+                self.sr = sr;
             },
             Opcode::Moveq => {
                 let v = op & 0xff;
                 let di = (op >> 9) & 7;
                 let val = if v < 0x80 { v as i16 } else { -256 + v as i16 };
                 self.d[di as usize] = (val as i32) as u32;
+
+                self.sr &= !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N);
             },
             Opcode::MovemFrom => {
                 let di = (op & 7) as usize;
@@ -221,6 +239,14 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let dst = self.read_source16(0, di);
                 self.set_cmp_sr(dst < src, dst == src, (dst.wrapping_sub(src) & 0x8000) != 0)
             },
+            Opcode::CmpiByte => {
+                let di = (op & 7) as usize;
+                let dt = ((op >> 3) & 7) as usize;
+                let src = self.read16(self.pc) as Byte;
+                self.pc += 2;
+                let dst = self.read_source8(dt, di);
+                self.set_cmp_sr(dst < src, dst == src, (dst.wrapping_sub(src) & 0x80) != 0)
+            },
             Opcode::CmpiWord => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
@@ -318,6 +344,14 @@ impl <BusT: BusTrait> Cpu<BusT> {
                     self.write_destination8(dt, di, dst | (1 << (bit & 7)));
                 }
             },
+            Opcode::AddByte => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source8(st, si);
+                let val = self.d[di];
+                self.d[di] = replace_byte(val, (val as Byte).wrapping_add(src));
+            },
             Opcode::AddWord => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
@@ -333,6 +367,15 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let src = self.read_source32(st, si);
                 self.d[di] = self.d[di].wrapping_add(src);
             },
+            Opcode::AddiByte => {
+                let di = (op & 7) as usize;
+                let dt = ((op >> 3) & 7) as usize;
+                let v = self.read16(self.pc) as Byte;
+                self.pc += 2;
+                let src = self.read_source8_incpc(dt, di, false);
+                self.write_destination8(dt, di, src.wrapping_add(v));
+                // TODO: Update all flags
+            },
             Opcode::AddaLong => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
@@ -340,19 +383,51 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let src = self.read_source32(st, si);
                 self.a[di] = self.a[di].wrapping_add(src);
             },
+            Opcode::AddqByte => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let v = conv07to18(op >> 9);
+                let src = self.read_source8_incpc(st, si, false);
+                self.write_destination8(st, si, (v as Byte).wrapping_add(src));
+            },
             Opcode::AddqWord => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
                 let v = conv07to18(op >> 9);
                 let src = self.read_source16_incpc(st, si, false);
-                self.write_destination16(st, si, src.wrapping_add(v as Word));
+                self.write_destination16(st, si, (v as Word).wrapping_add(src));
             },
             Opcode::AddqLong => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
                 let v = conv07to18(op >> 9);
                 let src = self.read_source32_incpc(st, si, false);
-                self.write_destination32(st, si, src.wrapping_add(v as Long));
+                self.write_destination32(st, si, (v as Long).wrapping_add(src));
+            },
+            Opcode::SubByte => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source8(st, si);
+                let val = self.d[di];
+                self.d[di] = replace_byte(val, (val as Byte).wrapping_sub(src));
+            },
+            Opcode::SubWord => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source16(st, si);
+                let val = self.d[di];
+                self.d[di] = replace_word(val, (val as Word).wrapping_sub(src));
+            },
+            Opcode::SubiByte => {
+                let di = (op & 7) as usize;
+                let dt = ((op >> 3) & 7) as usize;
+                let v = self.read16(self.pc) as Byte;
+                self.pc += 2;
+                let src = self.read_source8_incpc(dt, di, false);
+                self.write_destination8(dt, di, src.wrapping_sub(v));
+                // TODO: Update all flags
             },
             Opcode::SubaLong => {
                 let si = (op & 7) as usize;
@@ -386,6 +461,13 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 let mut sr = self.sr & !FLAG_Z;
                 if val == 0 { sr |= FLAG_Z };
                 self.sr = sr;
+            },
+            Opcode::MuluWord => {
+                let si = (op & 7) as usize;
+                let st = ((op >> 3) & 7) as usize;
+                let di = ((op >> 9) & 7) as usize;
+                let src = self.read_source16(st, si);
+                self.d[di] = ((self.d[di] as Word) as Long).wrapping_mul(src as Long);
             },
             Opcode::AndByte => {
                 let si = (op & 7) as usize;
@@ -551,6 +633,8 @@ impl <BusT: BusTrait> Cpu<BusT> {
             Opcode::Bcs => { self.bcond(op, (self.sr & FLAG_C) != 0); },
             Opcode::Bne => { self.bcond(op, (self.sr & FLAG_Z) == 0); },
             Opcode::Beq => { self.bcond(op, (self.sr & FLAG_Z) != 0); },
+            Opcode::Bpl => { self.bcond(op, (self.sr & FLAG_N) == 0); },
+            Opcode::Bmi => { self.bcond(op, (self.sr & FLAG_N) != 0); },
             Opcode::Bge => { let nv = self.sr & (FLAG_N | FLAG_V); self.bcond(op, nv == 0 || nv == (FLAG_N | FLAG_V)); },
             Opcode::Blt => { let nv = self.sr & (FLAG_N | FLAG_V); self.bcond(op, nv == FLAG_N || nv == FLAG_V); },
             Opcode::Bgt => { let nv = self.sr & (FLAG_N | FLAG_V); self.bcond(op, (self.sr & FLAG_Z) == 0 && (nv == 0 || nv == (FLAG_N | FLAG_V))); },
