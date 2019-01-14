@@ -78,8 +78,20 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             (4, format!("movem.l {}, {}", apostinc(si), regs))
         },
         Opcode::MoveToSrIm => {
-            let sr = bus.read16(adr + 2);
-            (4, format!("move #${:04x}, SR", sr))
+            let val = bus.read16(adr + 2);
+            (4, format!("move #${:04x}, SR", val))
+        },
+        Opcode::MoveToSr => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("move {}, SR", sstr))
+        },
+        Opcode::MoveFromSr => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("move SR, {}", dstr))
         },
         Opcode::LeaDirect => {
             let di = (op >> 9) & 7;
@@ -109,26 +121,23 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let ofs = bus.read16(adr + 2) as SWord;
             (4, format!("lea ({}, PC), {}", ofs, areg(di)))
         },
-        Opcode::Clr => {
+        Opcode::ClrByte => {
             let di = op & 7;
             let dt = ((op >> 3) & 7) as usize;
-            match op & 0xffc0 {
-                0x4200 => {  // byte
-                    let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
-                    ((2 + dsz) as usize, format!("clr.b {}", dstr))
-                },
-                0x4240 => {  // word
-                    let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
-                    ((2 + dsz) as usize, format!("clr.w {}", dstr))
-                },
-                0x4280 => {  // long
-                    let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
-                    ((2 + dsz) as usize, format!("clr.l {}", dstr))
-                },
-                _ => {
-                    panic!("Must not happen");
-                },
-            }
+            let (dsz, dstr) = write_destination8(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("clr.b {}", dstr))
+        },
+        Opcode::ClrWord => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("clr.w {}", dstr))
+        },
+        Opcode::ClrLong => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("clr.l {}", dstr))
         },
         Opcode::Swap => {
             let di = op & 7;
@@ -149,6 +158,13 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
             let (dsz, dstr) = write_destination16(bus, adr + 2 + ssz, 0, di);
             ((2 + ssz + dsz) as usize, format!("cmp.w {}, {}", sstr, dstr))
+        },
+        Opcode::CmpiWord => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let val = bus.read16(adr + 2);
+            let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("cmpi.w #${:04x}, {}", val, dstr))
         },
         Opcode::CmpaLong => {
             let si = op & 7;
@@ -200,15 +216,36 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let (ssz, sstr) = read_source16(bus, adr + 4, st, si);
             ((4 + ssz) as usize, format!("btst #{}, {}", bit, sstr))
         },
-        Opcode::BsetIm => {
-            let si = op & 7;
-            let st = ((op >> 3) & 7) as usize;
+        Opcode::BclrIm => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
             let bit = bus.read16(adr + 2);
-            let (ssz, sstr) = read_source16(bus, adr + 4, st, si);
-            ((4 + ssz) as usize, format!("bset #{}, {}", bit, sstr))
+            let (dsz, dstr) = write_destination16(bus, adr + 4, dt, di);
+            ((4 + dsz) as usize, format!("bclr #{}, {}", bit, dstr))
+        },
+        Opcode::Bset => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let si = (op >> 9) & 7;
+            let (dsz, dstr) = write_destination8(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("bset {}, {}", dreg(si), dstr))
+        },
+        Opcode::BsetIm => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let bit = bus.read16(adr + 2);
+            let (dsz, dstr) = write_destination16(bus, adr + 4, dt, di);
+            ((4 + dsz) as usize, format!("bset #{}, {}", bit, dstr))
         },
         Opcode::Reset => {
             (2, "reset".to_string())
+        },
+        Opcode::AddWord => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source16(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("add.w {}, {}", sstr, dreg(di)))
         },
         Opcode::AddLong => {
             let si = op & 7;
@@ -223,6 +260,13 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let di = (op >> 9) & 7;
             let (ssz, sstr) = read_source32(bus, adr + 2, st, si);
             ((2 + ssz) as usize, format!("adda.l {}, {}", sstr, areg(di)))
+        },
+        Opcode::AddqWord => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let v = conv07to18(op >> 9);
+            let (dsz, dstr) = write_destination16(bus, adr + 2, dt, di);
+            ((2 + dsz) as usize, format!("addq.w #{}, {}", v, dstr))
         },
         Opcode::AddqLong => {
             let di = op & 7;
@@ -308,12 +352,26 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let (dsz, dstr) = write_destination16(bus, adr + 4, dt, di);
             ((4 + dsz) as usize, format!("ori.w #${:04x}, {}", v, dstr))
         },
+        Opcode::EorByte => {
+            let si = op & 7;
+            let st = ((op >> 3) & 7) as usize;
+            let di = (op >> 9) & 7;
+            let (ssz, sstr) = read_source8(bus, adr + 2, st, si);
+            ((2 + ssz) as usize, format!("eor.b {}, {}", sstr, dreg(di)))
+        },
         Opcode::EoriByte => {
             let di = op & 7;
             let dt = ((op >> 3) & 7) as usize;
             let v = bus.read16(adr + 2) as Byte;
             let (dsz, dstr) = write_destination8(bus, adr + 4, dt, di);
             ((4 + dsz) as usize, format!("eori.b #${:02x}, {}", v, dstr))
+        },
+        Opcode::EoriWord => {
+            let di = op & 7;
+            let dt = ((op >> 3) & 7) as usize;
+            let v = bus.read16(adr + 2);
+            let (dsz, dstr) = write_destination16(bus, adr + 4, dt, di);
+            ((4 + dsz) as usize, format!("eori.w #${:02x}, {}", v, dstr))
         },
         Opcode::AslImByte => {
             let di = op & 7;
@@ -330,17 +388,32 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let shift = conv07to18(op >> 9);
             (2, format!("asl.l #{}, {}", shift, dreg(di)))
         },
+        Opcode::LsrImByte => {
+            let di = op & 7;
+            let shift = conv07to18(op >> 9);
+            (2, format!("lsr.b #{}, {}", shift, dreg(di)))
+        },
         Opcode::LsrImWord => {
             let di = op & 7;
             let shift = conv07to18(op >> 9);
             (2, format!("lsr.w #{}, {}", shift, dreg(di)))
         },
-        Opcode::RorWord => {
+        Opcode::LslImWord => {
+            let di = op & 7;
+            let shift = conv07to18(op >> 9);
+            (2, format!("lsl.w #{}, {}", shift, dreg(di)))
+        },
+        Opcode::RorImWord => {
             let di = op & 7;
             let si = conv07to18(op >> 9);
             (2, format!("ror.w #{}, {}", si, dreg(di)))
         },
-        Opcode::RolByte => {
+        Opcode::RolWord => {
+            let di = op & 7;
+            let si = (op >> 9) & 7;
+            (2, format!("rol.w {}, {}", dreg(si), dreg(di)))
+        },
+        Opcode::RolImByte => {
             let di = op & 7;
             let si = conv07to18(op >> 9);
             (2, format!("rol.b #{}, {}", si, dreg(di)))
@@ -451,6 +524,18 @@ fn read_source16<BusT: BusTrait>(bus: &mut BusT, adr: Adr,  src: usize, m: Word)
             let ofs = bus.read16(adr) as SWord;
             (2, format!("({}, {})", ofs, areg(m)))
         },
+        6 => {  // Memory Indirect Pre-indexed: move.w xx, (123, An, Dx)
+            let extension = bus.read16(adr);
+            if (extension & 0x100) != 0 {
+                (2, format!("UnhandledSrc(6/{:04x})", extension))
+            } else {
+                let ofs = extension as SByte;
+                let da = (extension & 0x8000) != 0;  // Displacement is address register?
+                let dr = (extension >> 12) & 7;  // Displacement register.
+                let dl = (extension & 0x0800) != 0;  // Displacement long?
+                (2, format!("({}, {}, {}.{})", ofs, areg(m), if da {areg(dr)} else {dreg(dr)}, if dl {'l'} else {'w'}))
+            }
+        },
         7 => {  // Misc.
             match m {
                 1 => {  // move.b $XXXXXXXX.l, xx
@@ -490,6 +575,18 @@ fn read_source32<BusT: BusTrait>(bus: &mut BusT, adr: Adr,  src: usize, m: Word)
             let ofs = bus.read16(adr) as SWord;
             (2, format!("({}, {})", ofs, areg(m)))
         },
+        6 => {  // Memory Indirect Pre-indexed: move.l xx, (123, An, Dx)
+            let extension = bus.read16(adr);
+            if (extension & 0x100) != 0 {
+                (2, format!("UnhandledSrc(6/{:04x})", extension))
+            } else {
+                let ofs = extension as SByte;
+                let da = (extension & 0x8000) != 0;  // Displacement is address register?
+                let dr = (extension >> 12) & 7;  // Displacement register.
+                let dl = (extension & 0x0800) != 0;  // Displacement long?
+                (2, format!("({}, {}, {}.{})", ofs, areg(m), if da {areg(dr)} else {dreg(dr)}, if dl {'l'} else {'w'}))
+            }
+        },
         7 => {  // Misc.
             match m {
                 1 => {  // move.b $XXXXXXXX.l, xx
@@ -516,6 +613,9 @@ fn write_destination8<BusT: BusTrait>(bus: &mut BusT, adr: Adr, dst: usize, n: W
         0 => {
             (0, dreg(n))
         },
+        2 => {  // move.b xx, (An)
+            (0, aind(n))
+        },
         3 => {
             (0, apostinc(n))
         },
@@ -526,7 +626,7 @@ fn write_destination8<BusT: BusTrait>(bus: &mut BusT, adr: Adr, dst: usize, n: W
         6 => {  // Memory Indirect Pre-indexed: move.b xx, (123, An, Dx)
             let extension = bus.read16(adr);
             if (extension & 0x100) != 0 {
-                (2, format!("UnhandledDst(7/{:04x})", extension))
+                (2, format!("UnhandledDst(6/{:04x})", extension))
             } else {
                 let ofs = extension as SByte;
                 let da = (extension & 0x8000) != 0;  // Displacement is address register?

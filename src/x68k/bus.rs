@@ -29,6 +29,22 @@ impl BusTrait for Bus {
                 0xe8802d => 0x80,  // Transmittance Status Register.
                 _ => 0,
             }
+        } else if 0xe8e000 <= adr && adr <= 0xe8ffff {  // I/O port
+            // TODO: Implement.
+            0
+        } else if 0xe94000 <= adr && adr <= 0xe94fff {  // Floppy Disk Controller
+            // TODO: Implement.
+            match adr {
+                0xe94001 => {
+                    0x80  // RQM: Request for Master
+                },
+                _ => {
+                    0
+                },
+            }
+        } else if 0xe9c000 <= adr && adr <= 0xe9cfff {  // I/O Controller
+            // TODO: Implement.
+            0
         } else if 0xed0000 <= adr && adr <= 0xed3fff {
             self.sram[(adr - 0xed0000) as usize]
         } else if 0xfe0000 <= adr && adr <= 0xffffff {
