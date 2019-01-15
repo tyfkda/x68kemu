@@ -1,6 +1,9 @@
 use super::super::cpu::{BusTrait};
 use super::super::types::{Byte, Adr};
 
+const RAM_SIZE: usize = 0x200000;
+const SRAM_SIZE: usize = 0x4000;
+
 pub struct Bus {
     mem: Vec<Byte>,
     sram: Vec<Byte>,
@@ -14,7 +17,7 @@ impl BusTrait for Bus {
     }
 
     fn read8(&mut self, adr: Adr) -> Byte {
-        if /*0x000000 <= adr &&*/ adr <= 0xffff {
+        if /*0x000000 <= adr &&*/ adr < RAM_SIZE as Adr {
             if self.booting {
                 self.ipl[(adr + 0x10000) as usize]
             } else {
@@ -45,7 +48,7 @@ impl BusTrait for Bus {
         } else if 0xe9c000 <= adr && adr <= 0xe9cfff {  // I/O Controller
             // TODO: Implement.
             0
-        } else if 0xed0000 <= adr && adr <= 0xed3fff {
+        } else if 0xed0000 <= adr && adr < 0xed0000 + (SRAM_SIZE as Adr) {
             self.sram[(adr - 0xed0000) as usize]
         } else if 0xfe0000 <= adr && adr <= 0xffffff {
             if adr >= 0xff0000 {
@@ -58,7 +61,7 @@ impl BusTrait for Bus {
     }
 
     fn write8(&mut self, adr: Adr, value: Byte) {
-        if /*0x000000 <= adr &&*/ adr <= 0xffff {
+        if /*0x000000 <= adr &&*/ adr < RAM_SIZE as Adr {
             self.mem[adr as usize] = value;
         } else if 0xe00000 <= adr && adr <= 0xe7ffff {  // TEXT VRAM
             // TODO: Implement.
@@ -109,8 +112,8 @@ impl BusTrait for Bus {
 impl Bus {
     pub fn new(ipl: Vec<Byte>) -> Bus {
         Bus {
-            mem: vec![0; 0x10000],
-            sram: vec![0; 0x4000],
+            mem: vec![0; RAM_SIZE],
+            sram: vec![0; SRAM_SIZE],
             ipl: ipl,
             booting: true,
         }

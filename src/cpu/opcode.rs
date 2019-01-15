@@ -25,6 +25,7 @@ pub(crate) enum Opcode {
     Swap,                // swap Dd
     CmpByte,             // cmp.b XX, YY
     CmpWord,             // cmp.w XX, YY
+    CmpLong,             // cmp.l XX, YY
     CmpiByte,            // cmpi.b #xx, YY
     CmpiWord,            // cmpi.w #xx, YY
     CmpaLong,            // cmpa.l XX, Ad
@@ -41,6 +42,7 @@ pub(crate) enum Opcode {
     AddWord,             // add.w XX, Dd
     AddLong,             // add.l XX, Dd
     AddiByte,            // addi.b XX, Dd
+    AddiWord,            // addi.w XX, Dd
     AddaLong,            // adda.l XX, Ad
     AddqByte,            // addq.b #%d, D%d
     AddqWord,            // addq.w #%d, D%d
@@ -133,6 +135,7 @@ lazy_static! {
         mask_inst(&mut m, 0xffc0, 0x0240, &Inst {op: Opcode::AndiWord});  // 0240-027f
         mask_inst(&mut m, 0xffc0, 0x0400, &Inst {op: Opcode::SubiByte});  // 0400-043f
         mask_inst(&mut m, 0xffc0, 0x0600, &Inst {op: Opcode::AddiByte});  // 0600-063f
+        mask_inst(&mut m, 0xffc0, 0x0640, &Inst {op: Opcode::AddiWord});  // 0640-067f
         mask_inst(&mut m, 0xffc0, 0x0800, &Inst {op: Opcode::BtstIm});  // 0800-083f
         mask_inst(&mut m, 0xffc0, 0x0880, &Inst {op: Opcode::BclrIm});  // 0880-08bf
         mask_inst(&mut m, 0xffc0, 0x08c0, &Inst {op: Opcode::BsetIm});  // 08c0-08ff
@@ -196,6 +199,7 @@ lazy_static! {
         mask_inst(&mut m, 0xfff8, 0x00e8, &Inst {op: Opcode::Cmp2Byte});  // 00e8-00ef
         mask_inst(&mut m, 0xf1c0, 0xb000, &Inst {op: Opcode::CmpByte});  // b000-b03f, b200-b23f, ..., be3f
         mask_inst(&mut m, 0xf1c0, 0xb040, &Inst {op: Opcode::CmpWord});  // b040-b07f, b240-b27f, ..., be7f
+        mask_inst(&mut m, 0xf1c0, 0xb080, &Inst {op: Opcode::CmpLong});  // b080-b0bf, b280-b2bf, ..., bebf
         mask_inst(&mut m, 0xf1c0, 0xb100, &Inst {op: Opcode::EorByte});  // b100-8000-803f, 8300-833f, ..., -8f3f
         mask_inst(&mut m, 0xf1f8, 0xb108, &Inst {op: Opcode::CmpmByte});  // b108-b10f, b308-b30f, ..., -bf0f
         mask_inst(&mut m, 0xf1c0, 0xb1c0, &Inst {op: Opcode::CmpaLong});  // b1c0-b1ff, b3c0-b3ff, ..., -bfff
