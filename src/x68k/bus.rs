@@ -39,12 +39,14 @@ impl BusTrait for Bus {
             // TODO: Implement.
             match adr {
                 0xe94001 => {
-                    0x80  // RQM: Request for Master
+                    0xd0  // RQM: Request for Master
                 },
                 _ => {
                     0
                 },
             }
+        } else if 0xe96000 <= adr && adr <= 0xe96fff {  // SASI
+            0
         } else if 0xe9c000 <= adr && adr <= 0xe9cfff {  // I/O Controller
             // TODO: Implement.
             0

@@ -72,6 +72,7 @@ pub(crate) enum Opcode {
     LsrImWord,           // lsr.w #n, Dd
     LslImWord,           // lsl.w #n, Dd
     RorImWord,           // ror.w XX, Dd
+    RorImLong,           // ror.l XX, Dd
     RolWord,             // rol.w Ds, Dd
     RolImByte,           // rol.b XX, Dd
     ExtWord,             // ext.w Dd
@@ -211,15 +212,16 @@ lazy_static! {
         mask_inst(&mut m, 0xf1c0, 0xd040, &Inst {op: Opcode::AddWord});  // d040-d07f, d240-d27f, ..., -de7f
         mask_inst(&mut m, 0xf1c0, 0xd080, &Inst {op: Opcode::AddLong});  // d080-d0bf, d280-d2bf, ..., -debf
         mask_inst(&mut m, 0xf1c0, 0xd1c0, &Inst {op: Opcode::AddaLong});  // d1c8, d1c9, d3c8, ..., dfff
-        mask_inst(&mut m, 0xf1f8, 0xe058, &Inst {op: Opcode::RorImWord});  // e058-e05f, e258-e25f, ..., ee58-ee5f
-        mask_inst(&mut m, 0xf1f8, 0xe008, &Inst {op: Opcode::LsrImByte});  // e008-e00f, e208-e20f, ..., ee08-ee0f
-        mask_inst(&mut m, 0xf1f8, 0xe048, &Inst {op: Opcode::LsrImWord});  // e048-e04f, e248-e24f, ..., ee48-ee4f
-        mask_inst(&mut m, 0xf1f8, 0xe148, &Inst {op: Opcode::LslImWord});  // e148-e14f, e348-e34f, ..., ef48-ef4f
-        mask_inst(&mut m, 0xf1f8, 0xe178, &Inst {op: Opcode::RolWord});  // e178-e17f, e378-e37f, ..., ef78-ef7f
-        mask_inst(&mut m, 0xf1f8, 0xe118, &Inst {op: Opcode::RolImByte});  // e118-e11f, e318-e31f, ..., ef18-ef1f
-        mask_inst(&mut m, 0xf1f8, 0xe100, &Inst {op: Opcode::AslImByte});  // e100-e107, e300-e307, ..., ef00-ef07
-        mask_inst(&mut m, 0xf1f8, 0xe140, &Inst {op: Opcode::AslImWord});  // e140-e147, e340-e347, ..., ef40-ef47
-        mask_inst(&mut m, 0xf1f8, 0xe180, &Inst {op: Opcode::AslImLong});  // e180-e187, e380-e387, ..., ef80-ef87
+        mask_inst(&mut m, 0xf1f8, 0xe058, &Inst {op: Opcode::RorImWord});  // e058-e05f, e258-e25f, ..., -ee5f
+        mask_inst(&mut m, 0xf1f8, 0xe098, &Inst {op: Opcode::RorImLong});  // e098-e09f, e298-e29f, ..., -ee9f
+        mask_inst(&mut m, 0xf1f8, 0xe008, &Inst {op: Opcode::LsrImByte});  // e008-e00f, e208-e20f, ..., -ee0f
+        mask_inst(&mut m, 0xf1f8, 0xe048, &Inst {op: Opcode::LsrImWord});  // e048-e04f, e248-e24f, ..., -ee4f
+        mask_inst(&mut m, 0xf1f8, 0xe148, &Inst {op: Opcode::LslImWord});  // e148-e14f, e348-e34f, ..., -ef4f
+        mask_inst(&mut m, 0xf1f8, 0xe178, &Inst {op: Opcode::RolWord});  // e178-e17f, e378-e37f, ..., -ef7f
+        mask_inst(&mut m, 0xf1f8, 0xe118, &Inst {op: Opcode::RolImByte});  // e118-e11f, e318-e31f, ..., -ef1f
+        mask_inst(&mut m, 0xf1f8, 0xe100, &Inst {op: Opcode::AslImByte});  // e100-e107, e300-e307, ..., -ef07
+        mask_inst(&mut m, 0xf1f8, 0xe140, &Inst {op: Opcode::AslImWord});  // e140-e147, e340-e347, ..., -ef47
+        mask_inst(&mut m, 0xf1f8, 0xe180, &Inst {op: Opcode::AslImLong});  // e180-e187, e380-e387, ..., -ef87
         m
     };
 }

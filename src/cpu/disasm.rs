@@ -56,10 +56,9 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             ((2 + ssz + dsz) as usize, format!("{:<7} {}, {}", mnemonic, sstr, dstr))
         },
         Opcode::Moveq => {
-            let v = op & 0xff;
+            let v = op as Byte;
             let di = (op >> 9) & 7;
-            let val = if v < 0x80 { v as SWord } else { -256 + v as SWord };
-            (2, format!("moveq   #${:x}, {}", val, dreg(di)))
+            (2, format!("moveq   #{}, {}", signed_hex8(v), dreg(di)))
         },
         Opcode::MovemFrom => {
             let di = op & 7;
@@ -97,20 +96,20 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
         Opcode::LeaOffset => {
             let si = op & 7;
             let di = (op >> 9) & 7;
-            let ofs = bus.read16(adr + 2) as SWord;
-            (4, format!("lea     (${:x},{}), {}", ofs, areg(si), areg(di)))
+            let ofs = bus.read16(adr + 2);
+            (4, format!("lea     ({},{}), {}", signed_hex16(ofs), areg(si), areg(di)))
         },
         Opcode::LeaOffsetD => {
             let si = op & 7;
             let di = (op >> 9) & 7;
             let next = bus.read16(adr + 2);
             if (next & 0x8f00) == 0x0000 {
-                let ofs = next as SByte;
+                let ofs = next as Byte;
                 let ii = (next >> 12) & 0x07;
                 if ofs == 0 {
                     (4, format!("lea     ({},{}.w), {}", areg(si), dreg(ii), areg(di)))
                 } else {
-                    (4, format!("lea     (${:x},{},{}.w), {}", ofs, areg(si), dreg(ii), areg(di)))
+                    (4, format!("lea     ({},{},{}.w), {}", signed_hex8(ofs), areg(si), dreg(ii), areg(di)))
                 }
             } else {
                 (4, "**Not implemented**".to_string())
@@ -118,8 +117,8 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
         },
         Opcode::LeaOffsetPc => {
             let di = (op >> 9) & 7;
-            let ofs = bus.read16(adr + 2) as SWord;
-            (4, format!("lea     (${:x},PC), {}", ofs, areg(di)))
+            let ofs = bus.read16(adr + 2);
+            (4, format!("lea     ({},PC), {}", signed_hex16(ofs), areg(di)))
         },
         Opcode::ClrByte => {
             let di = op & 7;
@@ -172,14 +171,14 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let dt = ((op >> 3) & 7) as usize;
             let val = bus.read16(adr + 2) as Byte;
             let (dsz, dstr) = write_destination8(bus, adr + 4, dt, di);
-            ((4 + dsz) as usize, format!("cmpi.b  #${:x}, {}", val, dstr))
+            ((4 + dsz) as usize, format!("cmpi.b  #{}, {}", signed_hex8(val), dstr))
         },
         Opcode::CmpiWord => {
             let di = op & 7;
             let dt = ((op >> 3) & 7) as usize;
             let val = bus.read16(adr + 2);
             let (dsz, dstr) = write_destination16(bus, adr + 4, dt, di);
-            ((4 + dsz) as usize, format!("cmpi.w  #${:x}, {}", val, dstr))
+            ((4 + dsz) as usize, format!("cmpi.w  #{}, {}", signed_hex16(val), dstr))
         },
         Opcode::CmpaLong => {
             let si = op & 7;
@@ -479,6 +478,11 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
             let si = conv07to18(op >> 9);
             (2, format!("ror.w   #{}, {}", si, dreg(di)))
         },
+        Opcode::RorImLong => {
+            let di = op & 7;
+            let si = conv07to18(op >> 9);
+            (2, format!("ror.l   #{}, {}", si, dreg(di)))
+        },
         Opcode::RolWord => {
             let di = op & 7;
             let si = (op >> 9) & 7;
@@ -537,6 +541,22 @@ pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String
         _ => {
             (2, format!("**{:04x}** Unknown opcode", op))
         },
+    }
+}
+
+fn signed_hex8(x: Byte) -> String {
+    if x < 0x80 {
+        format!("${:x}", x)
+    } else {
+        format!("-${:x}", (0 as SByte).wrapping_sub(x as SByte) as Byte)
+    }
+}
+
+fn signed_hex16(x: Word) -> String {
+    if x < 0x8000 {
+        format!("${:x}", x)
+    } else {
+        format!("-${:x}", (0 as SWord).wrapping_sub(x as SWord) as Word)
     }
 }
 
