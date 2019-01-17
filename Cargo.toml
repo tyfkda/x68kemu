@@ -6,4 +6,4 @@ edition = "2018"
 
 [dependencies]
 lazy_static = "1.2.0"
-sdl2 = "0.34.2"
+sdl2 = "0.35.2"
