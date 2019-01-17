@@ -1,21 +1,20 @@
 use std::fs;
 use std::io::ErrorKind;
 
+mod app;
 mod cpu;
 mod types;
 mod x68k;
 
-use self::x68k::X68k;
+use self::app::App;
 
 const IPLROM_PATH: &str = "X68BIOSE/IPLROM.DAT";
 
 fn main() {
     match fs::read(IPLROM_PATH) {
         Result::Ok(ipl) => {
-            let mut x68k = X68k::new(ipl);
-            loop {
-                x68k.update(10000);
-            }
+            let mut app = App::new(ipl);
+            app.run();
         },
         Result::Err(err) => {
             if err.kind() == ErrorKind::NotFound {
