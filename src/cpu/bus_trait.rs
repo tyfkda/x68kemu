@@ -1,16 +1,17 @@
 use super::super::types::{Byte, Word, Long, Adr};
 
 pub trait BusTrait {
-    fn read8(&self, adr: Adr) -> Byte;
+    fn reset(&mut self) {}
+    fn read8(&mut self, adr: Adr) -> Byte;
     fn write8(&mut self, adr: Adr, value: Byte);
 
-    fn read16(&self, adr: Adr) -> Word {
+    fn read16(&mut self, adr: Adr) -> Word {
         let d0 = self.read8(adr) as Word;
         let d1 = self.read8(adr + 1) as Word;
         (d0 << 8) | d1
     }
 
-    fn read32(&self, adr: Adr) -> Long {
+    fn read32(&mut self, adr: Adr) -> Long {
         let d0 = self.read8(adr) as Long;
         let d1 = self.read8(adr + 1) as Long;
         let d2 = self.read8(adr + 2) as Long;
