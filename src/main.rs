@@ -4,19 +4,13 @@ mod cpu;
 mod types;
 mod x68k;
 
-use self::cpu::{BusTrait, Cpu};
-
-fn main_loop<BusT: BusTrait>(regs: &mut cpu::Registers, bus: &mut BusT) {
-    let mut cpu = Cpu::new(regs, bus);
-    cpu.run();
-}
+use self::x68k::{X68k};
 
 fn main() {
     match fs::read("X68BIOSE/IPLROM.DAT") {
         Result::Ok(ipl) => {
-            let mut bus = x68k::Bus::new(ipl);
-            let mut regs = cpu::Registers::new();
-            main_loop(&mut regs, &mut bus);
+            let mut x68k = X68k::new(ipl);
+            x68k.main_loop();
         },
         Result::Err(err) => {
             panic!(err);
