@@ -11,10 +11,9 @@ fn main_loop<BusT: BusTrait>(cpu: &mut Cpu<BusT>) {
 }
 
 fn main() {
-    let res = fs::read("X68BIOSE/IPLROM.DAT");
-    match res {
-        Result::Ok(data) => {
-            let mut bus = x68k::Bus::new(data);
+    match fs::read("X68BIOSE/IPLROM.DAT") {
+        Result::Ok(ipl) => {
+            let mut bus = x68k::Bus::new(ipl);
             let mut cpu = Cpu::new(&mut bus);
             main_loop(&mut cpu);
         },
