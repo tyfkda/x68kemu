@@ -15,16 +15,16 @@ const FLAG_X: Word = 1 << 4;
 
 const TRAP_VECTOR_START: Adr = 0x0080;
 
-pub struct Cpu<BusT> {
-    bus: BusT,
+pub struct Cpu<'a, BusT> {
+    bus: &'a mut BusT,
     a: [Adr; 8],  // Address registers
     d: [Long; 8],  // Data registers
     pc: Adr,
     sr: Word,
 }
 
-impl <BusT: BusTrait> Cpu<BusT> {
-    pub fn new(bus: BusT) -> Cpu<BusT> {
+impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
+    pub fn new(bus: &'a mut BusT) -> Cpu<'a, BusT> {
         let mut cpu = Cpu {
             bus: bus,
             a: [0; 8],
@@ -51,8 +51,8 @@ impl <BusT: BusTrait> Cpu<BusT> {
     pub fn run(&mut self) {
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             loop {
-                let (sz, mnemonic) = disasm(&mut self.bus, self.pc);
-                println!("{:06x}: {}  {}", self.pc, dump_mem(&mut self.bus, self.pc, sz, 5), mnemonic);
+                let (sz, mnemonic) = disasm(self.bus, self.pc);
+                println!("{:06x}: {}  {}", self.pc, dump_mem(self.bus, self.pc, sz, 5), mnemonic);
                 self.step();
             }
         }));
@@ -703,7 +703,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
                 self.pc = if w != 0xffff { (self.pc as SLong).wrapping_add(ofs as SLong) as Adr } else { self.pc + 2 }
             },
             Opcode::Bsr => {
-                let (ofs, sz) = get_branch_offset(op, &mut self.bus, self.pc);
+                let (ofs, sz) = get_branch_offset(op, self.bus, self.pc);
                 self.pc += sz;
                 self.push32(self.pc);
                 self.pc = ((startadr + 2) as i32 + ofs as i32) as u32;
@@ -745,7 +745,7 @@ impl <BusT: BusTrait> Cpu<BusT> {
     }
 
     fn bcond(&mut self, op: Word, cond: bool) {
-        let (ofs, sz) = get_branch_offset(op, &mut self.bus, self.pc);
+        let (ofs, sz) = get_branch_offset(op, self.bus, self.pc);
         self.pc = if cond { (self.pc as SLong).wrapping_add(ofs) as Adr } else { self.pc + sz };
     }
 

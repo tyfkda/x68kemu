@@ -6,7 +6,7 @@ mod x68k;
 
 use self::cpu::{BusTrait, Cpu};
 
-fn main_loop<BusT: BusTrait>(mut cpu: Cpu<BusT>) {
+fn main_loop<BusT: BusTrait>(cpu: &mut Cpu<BusT>) {
     cpu.run();
 }
 
@@ -14,9 +14,9 @@ fn main() {
     let res = fs::read("X68BIOSE/IPLROM.DAT");
     match res {
         Result::Ok(data) => {
-            let bus = x68k::Bus::new(data);
-            let cpu = Cpu::new(bus);
-            main_loop(cpu);
+            let mut bus = x68k::Bus::new(data);
+            let mut cpu = Cpu::new(&mut bus);
+            main_loop(&mut cpu);
         },
         Result::Err(err) => {
             panic!(err);
