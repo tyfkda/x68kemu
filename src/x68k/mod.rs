@@ -1,4 +1,5 @@
 mod bus;
+mod fdc;
 mod vram;
 mod x68k;
 

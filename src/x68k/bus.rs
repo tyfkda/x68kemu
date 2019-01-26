@@ -1,8 +1,9 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use super::vram::Vram;
 use super::super::cpu::BusTrait;
 use super::super::types::{Byte, Adr};
+use super::fdc::Fdc;
 
 const RAM_SIZE: usize = 0x200000;
 const SRAM_SIZE: usize = 0x4000;
@@ -13,6 +14,7 @@ pub struct Bus {
     ipl: Vec<Byte>,
     booting: Cell<bool>,
     vram: Vram,
+    fdc: RefCell<Fdc>,
 }
 
 impl BusTrait for Bus {
@@ -43,16 +45,8 @@ impl BusTrait for Bus {
         } else if (0xe8e000..=0xe8ffff).contains(&adr) {  // I/O port
             // TODO: Implement.
             0
-        } else if (0xe94000..=0xe94fff).contains(&adr) {  // Floppy Disk Controller
-            // TODO: Implement.
-            match adr {
-                0xe94001 => {
-                    0xd0  // RQM: Request for Master
-                },
-                _ => {
-                    0
-                },
-            }
+        } else if (0xe94000..=0xe94fff).contains(&adr) {  // FDC
+            self.fdc.borrow_mut().read8(adr)
         } else if (0xe96000..=0xe96fff).contains(&adr) {  // SASI
             0
         } else if (0xe9c000..=0xe9cfff).contains(&adr) {  // I/O Controller
@@ -98,7 +92,7 @@ impl BusTrait for Bus {
         } else if (0xe92000..=0xe93fff).contains(&adr) {  // ADPCM
             // TODO: Implement.
         } else if (0xe94000..=0xe95fff).contains(&adr) {  // FDC
-            // TODO: Implement.
+            self.fdc.get_mut().write8(adr, value);
         } else if (0xe96000..=0xe97fff).contains(&adr) {  // HDD
             // TODO: Implement.
         } else if (0xe98000..=0xe99fff).contains(&adr) {  // SCC
@@ -122,13 +116,14 @@ impl BusTrait for Bus {
 }
 
 impl Bus {
-    pub fn new(ipl: Vec<Byte>, vram: Vram) -> Self {
+    pub fn new(ipl: Vec<Byte>, vram: Vram, fdc: Fdc) -> Self {
         Self {
             mem: vec![0; RAM_SIZE],
             sram: vec![0; SRAM_SIZE],
             ipl,
             booting: true.into(),
             vram,
+            fdc: fdc.into(),
         }
     }
 }
