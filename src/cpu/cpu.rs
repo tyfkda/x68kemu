@@ -1,6 +1,7 @@
 use std::panic;
 
 use super::bus_trait::{BusTrait};
+use super::registers::{Registers};
 use super::disasm::{disasm};
 use super::opcode::{Opcode, INST};
 use super::super::types::{Byte, Word, Long, SByte, SWord, SLong, Adr};
@@ -16,21 +17,15 @@ const FLAG_X: Word = 1 << 4;
 const TRAP_VECTOR_START: Adr = 0x0080;
 
 pub struct Cpu<'a, BusT> {
+    regs: &'a mut Registers,
     bus: &'a mut BusT,
-    a: [Adr; 8],  // Address registers
-    d: [Long; 8],  // Data registers
-    pc: Adr,
-    sr: Word,
 }
 
-impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
-    pub fn new(bus: &'a mut BusT) -> Cpu<'a, BusT> {
+impl<'a, BusT: BusTrait> Cpu<'a, BusT> {
+    pub fn new(regs: &'a mut Registers, bus: &'a mut BusT) -> Cpu<'a, BusT> {
         let mut cpu = Cpu {
-            bus: bus,
-            a: [0; 8],
-            d: [0; 8],
-            pc: 0,
-            sr: 0,
+            regs,
+            bus,
         };
         cpu.reset();
         cpu
@@ -38,34 +33,34 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
 
     pub fn reset(&mut self) {
         self.bus.reset();
-        self.sr = 0;
-        self.a[SP] = self.read32(0x000000);
-        self.pc = self.read32(0x000004);
+        self.regs.sr = 0;
+        self.regs.a[SP] = self.read32(0x000000);
+        self.regs.pc = self.read32(0x000004);
     }
 
     #[allow(dead_code)]
     pub fn set_pc(&mut self, pc: Adr) {
-        self.pc = pc;
+        self.regs.pc = pc;
     }
 
     pub fn run(&mut self) {
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             loop {
-                let (sz, mnemonic) = disasm(self.bus, self.pc);
-                println!("{:06x}: {}  {}", self.pc, dump_mem(self.bus, self.pc, sz, 5), mnemonic);
+                let (sz, mnemonic) = disasm(self.bus, self.regs.pc);
+                println!("{:06x}: {}  {}", self.regs.pc, dump_mem(self.bus, self.regs.pc, sz, 5), mnemonic);
                 self.step();
             }
         }));
         if result.is_err() {
-            eprintln!("panic catched: pc={:06x}, op={:04x}", self.pc, self.bus.read16(self.pc));
+            eprintln!("panic catched: pc={:06x}, op={:04x}", self.regs.pc, self.bus.read16(self.regs.pc));
             result.unwrap_or_else(|e| panic::resume_unwind(e));
         }
     }
 
     fn step(&mut self) {
-        let startadr = self.pc;
-        let op = self.read16(self.pc);
-        self.pc += 2;
+        let startadr = self.regs.pc;
+        let op = self.read16(self.regs.pc);
+        self.regs.pc += 2;
         let inst = &INST[op as usize];
 
         match inst.op {
@@ -83,7 +78,7 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let mut ccr = 0;
                 if src == 0          { ccr |= FLAG_Z; }
                 if (src & 0x80) != 0 { ccr |= FLAG_N; }
-                self.sr = (self.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N)) | ccr;
+                self.regs.sr = (self.regs.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N)) | ccr;
             },
             Opcode::MoveWord => {
                 let si = (op & 7) as usize;
@@ -96,7 +91,7 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let mut ccr = 0;
                 if src == 0            { ccr |= FLAG_Z; }
                 if (src & 0x8000) != 0 { ccr |= FLAG_N; }
-                self.sr = (self.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N)) | ccr;
+                self.regs.sr = (self.regs.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N)) | ccr;
             },
             Opcode::MoveLong => {
                 let si = (op & 7) as usize;
@@ -109,102 +104,102 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let mut ccr = 0;
                 if src == 0                { ccr |= FLAG_Z; }
                 if (src & 0x80000000) != 0 { ccr |= FLAG_N; }
-                self.sr = (self.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N)) | ccr;
+                self.regs.sr = (self.regs.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N)) | ccr;
             },
             Opcode::Moveq => {
                 let v = op & 0xff;
                 let di = (op >> 9) & 7;
                 let src = if v < 0x80 { v as i16 } else { -256 + v as i16 };
-                self.d[di as usize] = (src as i32) as u32;
+                self.regs.d[di as usize] = (src as i32) as u32;
 
                 let mut ccr = 0;
                 if src == 0 { ccr |= FLAG_Z; }
                 if src < 0  { ccr |= FLAG_N; }
-                self.sr = (self.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N)) | ccr;
+                self.regs.sr = (self.regs.sr & !(FLAG_C | FLAG_V | FLAG_Z | FLAG_N)) | ccr;
             },
             Opcode::MovemFrom => {
                 let di = (op & 7) as usize;
-                let bits = self.read16(self.pc);
-                self.pc += 2;
-                let mut p = self.a[di];
+                let bits = self.read16(self.regs.pc);
+                self.regs.pc += 2;
+                let mut p = self.regs.a[di];
                 for i in 0..8 {
                     if (bits & (0x0001 << i)) != 0 {
                         p -= 4;
-                        self.write32(p, self.a[7 - i]);
+                        self.write32(p, self.regs.a[7 - i]);
                     }
                 }
                 for i in 0..8 {
                     if (bits & (0x0100 << i)) != 0 {
                         p -= 4;
-                        self.write32(p, self.d[7 - i]);
+                        self.write32(p, self.regs.d[7 - i]);
                     }
                 }
-                self.a[di] = p;
+                self.regs.a[di] = p;
             },
             Opcode::MovemTo => {
                 let di = (op & 7) as usize;
-                let bits = self.read16(self.pc);
-                self.pc += 2;
-                let mut p = self.a[di];
+                let bits = self.read16(self.regs.pc);
+                self.regs.pc += 2;
+                let mut p = self.regs.a[di];
                 for i in 0..8 {
                     if (bits & (0x0001 << i)) != 0 {
-                        self.d[i] = self.read32(p);
+                        self.regs.d[i] = self.read32(p);
                         p += 4;
                     }
                 }
                 for i in 0..8 {
                     if (bits & (0x0100 << i)) != 0 {
-                        self.a[i] = self.read32(p);
+                        self.regs.a[i] = self.read32(p);
                         p += 4;
                     }
                 }
-                self.a[di] = p;
+                self.regs.a[di] = p;
             },
             Opcode::MoveToSrIm => {
-                self.sr = self.read16(self.pc);
-                self.pc += 2;
+                self.regs.sr = self.read16(self.regs.pc);
+                self.regs.pc += 2;
             },
             Opcode::MoveToSr => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
-                self.sr = self.read_source16(st, si);
+                self.regs.sr = self.read_source16(st, si);
             },
             Opcode::MoveFromSr => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                self.write_destination16(dt, di, self.sr);
+                self.write_destination16(dt, di, self.regs.sr);
             },
             Opcode::LeaDirect => {
                 let di = ((op >> 9) & 7) as usize;
-                let value = self.read32(self.pc);
-                self.pc += 4;
-                self.a[di] = value;
+                let value = self.read32(self.regs.pc);
+                self.regs.pc += 4;
+                self.regs.a[di] = value;
             },
             Opcode::LeaOffset => {
                 let si = (op & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
-                let ofs = self.read16(self.pc) as SWord;
-                self.pc += 2;
-                self.a[di] = (self.a[si] as SLong + ofs as SLong) as Long;
+                let ofs = self.read16(self.regs.pc) as SWord;
+                self.regs.pc += 2;
+                self.regs.a[di] = (self.regs.a[si] as SLong + ofs as SLong) as Long;
             },
             Opcode::LeaOffsetD => {
                 let si = (op & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
-                let next = self.read16(self.pc);
-                self.pc += 2;
+                let next = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 if (next & 0x8f00) == 0x0000 {
                     let ofs = next as SByte;
                     let ii = ((next >> 12) & 0x07) as usize;
-                    self.a[di] = (self.a[si] as SLong).wrapping_add(self.d[ii] as SWord as SLong).wrapping_add(ofs as SLong) as Adr
+                    self.regs.a[di] = (self.regs.a[si] as SLong).wrapping_add(self.regs.d[ii] as SWord as SLong).wrapping_add(ofs as SLong) as Adr
                 } else {
                     panic!("Not implemented");
                 }
             },
             Opcode::LeaOffsetPc => {
                 let di = ((op >> 9) & 7) as usize;
-                let ofs = self.read16(self.pc) as SWord;
-                self.pc += 2;
-                self.a[di] = (self.pc as SLong + ofs as SLong) as Long;
+                let ofs = self.read16(self.regs.pc) as SWord;
+                self.regs.pc += 2;
+                self.regs.a[di] = (self.regs.pc as SLong + ofs as SLong) as Long;
             },
             Opcode::ClrByte => {
                 let di = (op & 7) as usize;
@@ -223,8 +218,8 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
             },
             Opcode::Swap => {
                 let di = (op & 7) as usize;
-                let v = self.d[di];
-                self.d[di] = (v << 16) | (v >> 16);
+                let v = self.regs.d[di];
+                self.regs.d[di] = (v << 16) | (v >> 16);
             },
             Opcode::CmpByte => {
                 let si = (op & 7) as usize;
@@ -256,8 +251,8 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
             Opcode::CmpiByte => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let src = self.read16(self.pc) as Byte;
-                self.pc += 2;
+                let src = self.read16(self.regs.pc) as Byte;
+                self.regs.pc += 2;
                 let dst = self.read_source8(dt, di);
                 let res = dst.wrapping_sub(src);
                 self.set_cmp_sr(dst < src, dst == src, (((src ^ dst) & (res ^ dst)) & 0x80) != 0, (res & 0x80) != 0);
@@ -265,8 +260,8 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
             Opcode::CmpiWord => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let src = self.read16(self.pc);
-                self.pc += 2;
+                let src = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 let dst = self.read_source16(dt, di);
                 let res = dst.wrapping_sub(src);
                 self.set_cmp_sr(dst < src, dst == src, (((src ^ dst) & (res ^ dst)) & 0x8000) != 0, (res & 0x8000) != 0);
@@ -283,10 +278,10 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
             Opcode::CmpmByte => {
                 let si = (op & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
-                let dst = self.read8(self.a[di]);
-                let src = self.read8(self.a[si]);
-                self.a[si] += 1;
-                self.a[di] += 1;
+                let dst = self.read8(self.regs.a[di]);
+                let src = self.read8(self.regs.a[si]);
+                self.regs.a[si] += 1;
+                self.regs.a[di] += 1;
                 let res = dst.wrapping_sub(src);
                 self.set_cmp_sr(dst < src, dst == src, (((src ^ dst) & (res ^ dst)) & 0x80) != 0, (res & 0x80) != 0);
             },
@@ -309,25 +304,25 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 self.set_tst_sr(val == 0, val < 0);
             },
             Opcode::BtstIm => {
-                let bit = self.read16(self.pc);
-                self.pc += 2;
+                let bit = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
                 if st < 2 {  // Data or address register: 32bit.
                     let val = self.read_source32(st, si);
                     let zero = (val & (1 << (bit & 31))) == 0;
-                    self.sr = (self.sr & !FLAG_Z) | (if zero {FLAG_Z} else {0});
+                    self.regs.sr = (self.regs.sr & !FLAG_Z) | (if zero {FLAG_Z} else {0});
                 } else {  // Memory: 8bit.
                     let val = self.read_source8(st, si);
                     let zero = (val & (1 << (bit & 7))) == 0;
-                    self.sr = (self.sr & !FLAG_Z) | (if zero {FLAG_Z} else {0});
+                    self.regs.sr = (self.regs.sr & !FLAG_Z) | (if zero {FLAG_Z} else {0});
                 }
             },
             Opcode::BclrIm => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let bit = self.read16(self.pc);
-                self.pc += 2;
+                let bit = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 if dt < 2 {
                     let dst = self.read_source32_incpc(dt, di, false);
                     self.write_destination32(dt, di, dst & !(1 << (bit & 31)));
@@ -342,18 +337,18 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let si = ((op >> 9) & 7) as usize;
                 if dt < 2 {  // Register: 32bit
                     let dst = self.read_source32_incpc(dt, di, false);
-                    self.write_destination32(dt, di, dst | (1 << (self.d[si] & 31)));
+                    self.write_destination32(dt, di, dst | (1 << (self.regs.d[si] & 31)));
                 } else {  // Memory: 8bit
                     let dst = self.read_source8_incpc(dt, di, false);
-                    self.write_destination8(dt, di, dst | (1 << (self.d[si] & 7)));
+                    self.write_destination8(dt, di, dst | (1 << (self.regs.d[si] & 7)));
                 }
                 // TODO: Update status.
             },
             Opcode::BsetIm => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let bit = self.read16(self.pc);
-                self.pc += 2;
+                let bit = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 if dt < 2 {  // Register: 32bit
                     let dst = self.read_source32_incpc(dt, di, false);
                     self.write_destination32(dt, di, dst | (1 << (bit & 31)));
@@ -367,29 +362,29 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source8(st, si);
-                let val = self.d[di];
-                self.d[di] = replace_byte(val, (val as Byte).wrapping_add(src));
+                let val = self.regs.d[di];
+                self.regs.d[di] = replace_byte(val, (val as Byte).wrapping_add(src));
             },
             Opcode::AddWord => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source16(st, si);
-                let val = self.d[di];
-                self.d[di] = replace_word(val, (val as Word).wrapping_add(src));
+                let val = self.regs.d[di];
+                self.regs.d[di] = replace_word(val, (val as Word).wrapping_add(src));
             },
             Opcode::AddLong => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source32(st, si);
-                self.d[di] = self.d[di].wrapping_add(src);
+                self.regs.d[di] = self.regs.d[di].wrapping_add(src);
             },
             Opcode::AddiByte => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let v = self.read16(self.pc) as Byte;
-                self.pc += 2;
+                let v = self.read16(self.regs.pc) as Byte;
+                self.regs.pc += 2;
                 let src = self.read_source8_incpc(dt, di, false);
                 self.write_destination8(dt, di, src.wrapping_add(v));
                 // TODO: Update all flags
@@ -397,8 +392,8 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
             Opcode::AddiWord => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let v = self.read16(self.pc);
-                self.pc += 2;
+                let v = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 let src = self.read_source16_incpc(dt, di, false);
                 self.write_destination16(dt, di, src.wrapping_add(v));
                 // TODO: Update all flags
@@ -408,7 +403,7 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source32(st, si);
-                self.a[di] = self.a[di].wrapping_add(src);
+                self.regs.a[di] = self.regs.a[di].wrapping_add(src);
             },
             Opcode::AddqByte => {
                 let si = (op & 7) as usize;
@@ -436,22 +431,22 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source8(st, si);
-                let val = self.d[di];
-                self.d[di] = replace_byte(val, (val as Byte).wrapping_sub(src));
+                let val = self.regs.d[di];
+                self.regs.d[di] = replace_byte(val, (val as Byte).wrapping_sub(src));
             },
             Opcode::SubWord => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source16(st, si);
-                let val = self.d[di];
-                self.d[di] = replace_word(val, (val as Word).wrapping_sub(src));
+                let val = self.regs.d[di];
+                self.regs.d[di] = replace_word(val, (val as Word).wrapping_sub(src));
             },
             Opcode::SubiByte => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let v = self.read16(self.pc) as Byte;
-                self.pc += 2;
+                let v = self.read16(self.regs.pc) as Byte;
+                self.regs.pc += 2;
                 let src = self.read_source8_incpc(dt, di, false);
                 self.write_destination8(dt, di, src.wrapping_sub(v));
                 // TODO: Update all flags
@@ -461,7 +456,7 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source32(st, si);
-                self.a[di] = self.a[di].wrapping_sub(src);
+                self.regs.a[di] = self.regs.a[di].wrapping_sub(src);
             },
             Opcode::SubqWord => {
                 let si = (op & 7) as usize;
@@ -472,9 +467,9 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 self.write_destination16(st, si, val);
 
                 // TODO: Update all flags
-                let mut sr = self.sr & !FLAG_Z;
+                let mut sr = self.regs.sr & !FLAG_Z;
                 if val == 0 { sr |= FLAG_Z; }
-                self.sr = sr;
+                self.regs.sr = sr;
             },
             Opcode::SubqLong => {
                 let si = (op & 7) as usize;
@@ -485,25 +480,25 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 self.write_destination32(st, si, val);
 
                 // TODO: Update all flags
-                let mut sr = self.sr & !FLAG_Z;
+                let mut sr = self.regs.sr & !FLAG_Z;
                 if val == 0 { sr |= FLAG_Z; }
-                self.sr = sr;
+                self.regs.sr = sr;
             },
             Opcode::MuluWord => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source16(st, si);
-                self.d[di] = ((self.d[di] as Word) as Long).wrapping_mul(src as Long);
+                self.regs.d[di] = ((self.regs.d[di] as Word) as Long).wrapping_mul(src as Long);
             },
             Opcode::AndByte => {
                 let si = (op & 7) as usize;
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source8(st, si);
-                let dst = self.d[di];
+                let dst = self.regs.d[di];
                 let res = (dst as Byte) & src;
-                self.d[di] = replace_byte(dst, res);
+                self.regs.d[di] = replace_byte(dst, res);
                 self.set_and_sr(res == 0, (res & 0x80) != 0);
             },
             Opcode::AndWord => {
@@ -511,9 +506,9 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source16(st, si);
-                let dst = self.d[di];
+                let dst = self.regs.d[di];
                 let res = (dst as Word) & src;
-                self.d[di] = replace_word(dst, res);
+                self.regs.d[di] = replace_word(dst, res);
                 self.set_and_sr(res == 0, (res & 0x8000) != 0);
             },
             Opcode::AndLong => {
@@ -521,16 +516,16 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source32(st, si);
-                let dst = self.d[di];
+                let dst = self.regs.d[di];
                 let res = dst & src;
-                self.d[di] = res;
+                self.regs.d[di] = res;
                 self.set_and_sr(res == 0, (res & 0x80000000) != 0);
             },
             Opcode::AndiWord => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let v = self.read16(self.pc);
-                self.pc += 2;
+                let v = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 let dst = self.read_source16_incpc(dt, di, false);
                 let res = dst & v;
                 self.write_destination16(dt, di, res);
@@ -541,8 +536,8 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source8(st, si);
-                let dst = self.d[di];
-                self.d[di] = replace_byte(dst, (dst as Byte) | src);
+                let dst = self.regs.d[di];
+                self.regs.d[di] = replace_byte(dst, (dst as Byte) | src);
                 // TODO: Update all flags
             },
             Opcode::OrWord => {
@@ -550,15 +545,15 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let st = ((op >> 3) & 7) as usize;
                 let di = ((op >> 9) & 7) as usize;
                 let src = self.read_source16(st, si);
-                let dst = self.d[di];
-                self.d[di] = replace_word(dst, (dst as Word) | src);
+                let dst = self.regs.d[di];
+                self.regs.d[di] = replace_word(dst, (dst as Word) | src);
                 // TODO: Update all flags
             },
             Opcode::OriByte => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let v = self.read16(self.pc) as Byte;
-                self.pc += 2;
+                let v = self.read16(self.regs.pc) as Byte;
+                self.regs.pc += 2;
                 let src = self.read_source8_incpc(dt, di, false);
                 self.write_destination8(dt, di, src | v);
                 // TODO: Update all flags
@@ -566,8 +561,8 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
             Opcode::OriWord => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let v = self.read16(self.pc);
-                self.pc += 2;
+                let v = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 let src = self.read_source16_incpc(dt, di, false);
                 self.write_destination16(dt, di, src | v);
                 // TODO: Update all flags
@@ -577,14 +572,14 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                 let dt = ((op >> 3) & 7) as usize;
                 let si = ((op >> 9) & 7) as usize;
                 let dst = self.read_source8_incpc(dt, di, false);
-                self.write_destination8(dt, di, (self.d[si] as Byte) ^ dst);
+                self.write_destination8(dt, di, (self.regs.d[si] as Byte) ^ dst);
                 // TODO: Update all flags
             },
             Opcode::EoriByte => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let v = self.read16(self.pc) as Byte;
-                self.pc += 2;
+                let v = self.read16(self.regs.pc) as Byte;
+                self.regs.pc += 2;
                 let src = self.read_source8_incpc(dt, di, false);
                 self.write_destination8(dt, di, src ^ v);
                 // TODO: Update all flags
@@ -592,8 +587,8 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
             Opcode::EoriWord => {
                 let di = (op & 7) as usize;
                 let dt = ((op >> 3) & 7) as usize;
-                let v = self.read16(self.pc);
-                self.pc += 2;
+                let v = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 let src = self.read_source16_incpc(dt, di, false);
                 self.write_destination16(dt, di, src ^ v);
                 // TODO: Update all flags
@@ -601,138 +596,138 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
             Opcode::AslImByte => {
                 let di = (op & 7) as usize;
                 let shift = conv07to18(op >> 9);
-                self.d[di] = replace_byte(self.d[di], (self.d[di] as Byte) << shift);
+                self.regs.d[di] = replace_byte(self.regs.d[di], (self.regs.d[di] as Byte) << shift);
                 // TODO: Set SR.
             },
             Opcode::AslImWord => {
                 let di = (op & 7) as usize;
                 let shift = conv07to18(op >> 9);
-                self.d[di] = replace_word(self.d[di], (self.d[di] as Word) << shift);
+                self.regs.d[di] = replace_word(self.regs.d[di], (self.regs.d[di] as Word) << shift);
                 // TODO: Set SR.
             },
             Opcode::AslImLong => {
                 let di = (op & 7) as usize;
                 let shift = conv07to18(op >> 9);
-                self.d[di] <<= shift;
+                self.regs.d[di] <<= shift;
                 // TODO: Set SR.
             },
             Opcode::LsrImByte => {
                 let di = (op & 7) as usize;
                 let shift = conv07to18(op >> 9);
-                let val = self.d[di];
+                let val = self.regs.d[di];
                 let newval = (val as Byte) >> shift;
-                self.d[di] = replace_byte(val, newval);
+                self.regs.d[di] = replace_byte(val, newval);
 
-                let mut sr = self.sr & !(FLAG_X | FLAG_N | FLAG_Z | FLAG_V | FLAG_C);
+                let mut sr = self.regs.sr & !(FLAG_X | FLAG_N | FLAG_Z | FLAG_V | FLAG_C);
                 if val & (1 << (shift - 1)) != 0 { sr |= FLAG_X | FLAG_C; }
                 if newval == 0 { sr |= FLAG_Z; }
-                self.sr = sr;
+                self.regs.sr = sr;
             },
             Opcode::LsrImWord => {
                 let di = (op & 7) as usize;
                 let shift = conv07to18(op >> 9);
-                let val = self.d[di];
+                let val = self.regs.d[di];
                 let newval = (val as Word) >> shift;
-                self.d[di] = replace_word(val, newval);
+                self.regs.d[di] = replace_word(val, newval);
 
-                let mut sr = self.sr & !(FLAG_X | FLAG_N | FLAG_Z | FLAG_V | FLAG_C);
+                let mut sr = self.regs.sr & !(FLAG_X | FLAG_N | FLAG_Z | FLAG_V | FLAG_C);
                 if val & (1 << (shift - 1)) != 0 { sr |= FLAG_X | FLAG_C; }
                 if newval == 0 { sr |= FLAG_Z; }
-                self.sr = sr;
+                self.regs.sr = sr;
             },
             Opcode::LslImWord => {
                 let di = (op & 7) as usize;
                 let shift = conv07to18(op >> 9);
-                let val = self.d[di];
-                self.d[di] = replace_word(val, (val as Word) << shift);
+                let val = self.regs.d[di];
+                self.regs.d[di] = replace_word(val, (val as Word) << shift);
                 // TODO: Set SR.
             },
             Opcode::RorImWord => {
                 let di = (op & 7) as usize;
                 let si = conv07to18(op >> 9);
-                let dst = self.d[di];
+                let dst = self.regs.d[di];
                 let w = dst as Word;
-                self.d[di] = replace_word(dst, (w >> si) | (w << (8 - si)));
+                self.regs.d[di] = replace_word(dst, (w >> si) | (w << (8 - si)));
                 // TODO: Set SR.
             },
             Opcode::RorImLong => {
                 let di = (op & 7) as usize;
                 let si = conv07to18(op >> 9);
-                let dst = self.d[di];
-                self.d[di] = (dst >> si) | (dst << (8 - si));
+                let dst = self.regs.d[di];
+                self.regs.d[di] = (dst >> si) | (dst << (8 - si));
                 // TODO: Set SR.
             },
             Opcode::RolWord => {
                 let di = (op & 7) as usize;
                 let si = ((op >> 9) & 7) as usize;
-                let val = self.d[di] as Word;
-                let shift = self.d[si] & 15;
-                self.d[di] = replace_word(self.d[di], (val << shift) | (val >> (16 - shift)));
+                let val = self.regs.d[di] as Word;
+                let shift = self.regs.d[si] & 15;
+                self.regs.d[di] = replace_word(self.regs.d[di], (val << shift) | (val >> (16 - shift)));
                 // TODO: Set SR.
             },
             Opcode::RolImByte => {
                 let di = (op & 7) as usize;
                 let si = conv07to18(op >> 9);
-                let val = self.d[di] as Byte;
-                self.d[di] = replace_byte(self.d[di], (val << si) | (val >> (8 - si)));
+                let val = self.regs.d[di] as Byte;
+                self.regs.d[di] = replace_byte(self.regs.d[di], (val << si) | (val >> (8 - si)));
                 // TODO: Set SR.
             },
             Opcode::ExtWord => {
                 let di = (op & 7) as usize;
-                let src = self.d[di];
-                self.d[di] = replace_word(src, src as SByte as SWord as Word);
+                let src = self.regs.d[di];
+                self.regs.d[di] = replace_word(src, src as SByte as SWord as Word);
             },
             Opcode::Bra => { self.bcond(op, true); },
-            Opcode::Bcc => { self.bcond(op, (self.sr & FLAG_C) == 0); },
-            Opcode::Bcs => { self.bcond(op, (self.sr & FLAG_C) != 0); },
-            Opcode::Bne => { self.bcond(op, (self.sr & FLAG_Z) == 0); },
-            Opcode::Beq => { self.bcond(op, (self.sr & FLAG_Z) != 0); },
-            Opcode::Bpl => { self.bcond(op, (self.sr & FLAG_N) == 0); },
-            Opcode::Bmi => { self.bcond(op, (self.sr & FLAG_N) != 0); },
-            Opcode::Bge => { let nv = self.sr & (FLAG_N | FLAG_V); self.bcond(op, nv == 0 || nv == (FLAG_N | FLAG_V)); },
-            Opcode::Blt => { let nv = self.sr & (FLAG_N | FLAG_V); self.bcond(op, nv == FLAG_N || nv == FLAG_V); },
-            Opcode::Bgt => { let nv = self.sr & (FLAG_N | FLAG_V); self.bcond(op, (self.sr & FLAG_Z) == 0 && (nv == 0 || nv == (FLAG_N | FLAG_V))); },
-            Opcode::Ble => { let nv = self.sr & (FLAG_N | FLAG_V); self.bcond(op, (self.sr & FLAG_Z) != 0 || nv == FLAG_N || nv == FLAG_V); },
+            Opcode::Bcc => { self.bcond(op, (self.regs.sr & FLAG_C) == 0); },
+            Opcode::Bcs => { self.bcond(op, (self.regs.sr & FLAG_C) != 0); },
+            Opcode::Bne => { self.bcond(op, (self.regs.sr & FLAG_Z) == 0); },
+            Opcode::Beq => { self.bcond(op, (self.regs.sr & FLAG_Z) != 0); },
+            Opcode::Bpl => { self.bcond(op, (self.regs.sr & FLAG_N) == 0); },
+            Opcode::Bmi => { self.bcond(op, (self.regs.sr & FLAG_N) != 0); },
+            Opcode::Bge => { let nv = self.regs.sr & (FLAG_N | FLAG_V); self.bcond(op, nv == 0 || nv == (FLAG_N | FLAG_V)); },
+            Opcode::Blt => { let nv = self.regs.sr & (FLAG_N | FLAG_V); self.bcond(op, nv == FLAG_N || nv == FLAG_V); },
+            Opcode::Bgt => { let nv = self.regs.sr & (FLAG_N | FLAG_V); self.bcond(op, (self.regs.sr & FLAG_Z) == 0 && (nv == 0 || nv == (FLAG_N | FLAG_V))); },
+            Opcode::Ble => { let nv = self.regs.sr & (FLAG_N | FLAG_V); self.bcond(op, (self.regs.sr & FLAG_Z) != 0 || nv == FLAG_N || nv == FLAG_V); },
             Opcode::Dbra => {
                 let si = (op & 7) as usize;
-                let ofs = self.read16(self.pc) as SWord;
+                let ofs = self.read16(self.regs.pc) as SWord;
 
-                let l = self.d[si];
+                let l = self.regs.d[si];
                 let w = (l as u16).wrapping_sub(1);
-                self.d[si] = replace_word(l, w);
-                self.pc = if w != 0xffff { (self.pc as SLong).wrapping_add(ofs as SLong) as Adr } else { self.pc + 2 }
+                self.regs.d[si] = replace_word(l, w);
+                self.regs.pc = if w != 0xffff { (self.regs.pc as SLong).wrapping_add(ofs as SLong) as Adr } else { self.regs.pc + 2 }
             },
             Opcode::Bsr => {
-                let (ofs, sz) = get_branch_offset(op, self.bus, self.pc);
-                self.pc += sz;
-                self.push32(self.pc);
-                self.pc = ((startadr + 2) as i32 + ofs as i32) as u32;
+                let (ofs, sz) = get_branch_offset(op, self.bus, self.regs.pc);
+                self.regs.pc += sz;
+                self.push32(self.regs.pc);
+                self.regs.pc = ((startadr + 2) as i32 + ofs as i32) as u32;
             },
             Opcode::JsrA => {
                 let si = (op & 7) as usize;
                 let adr = if (op & 15) < 8 {
-                    self.a[si]
+                    self.regs.a[si]
                 } else {
-                    let offset = self.read16(self.pc);
-                    self.pc += 2;
+                    let offset = self.read16(self.regs.pc);
+                    self.regs.pc += 2;
                     panic!("Not implemented: JSR (${:04x}, A{})", offset, si);
                 };
-                self.push32(self.pc);
-                self.pc = adr;
+                self.push32(self.regs.pc);
+                self.regs.pc = adr;
             },
             Opcode::Rts => {
-                self.pc = self.pop32();
+                self.regs.pc = self.pop32();
             },
             Opcode::Rte => {
-                self.pc = self.pop32();
+                self.regs.pc = self.pop32();
                 // TODO: Switch to user mode.
             },
             Opcode::Trap => {
                 let no = op & 0x000f;
                 // TODO: Move to super visor mode.
                 let adr = self.read32(TRAP_VECTOR_START + (no * 4) as u32);
-                self.push32(self.pc);
-                self.pc = adr;
+                self.push32(self.regs.pc);
+                self.regs.pc = adr;
             },
             Opcode::Reset => {
                 // TODO: Implement.
@@ -745,19 +740,19 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
     }
 
     fn bcond(&mut self, op: Word, cond: bool) {
-        let (ofs, sz) = get_branch_offset(op, self.bus, self.pc);
-        self.pc = if cond { (self.pc as SLong).wrapping_add(ofs) as Adr } else { self.pc + sz };
+        let (ofs, sz) = get_branch_offset(op, self.bus, self.regs.pc);
+        self.regs.pc = if cond { (self.regs.pc as SLong).wrapping_add(ofs) as Adr } else { self.regs.pc + sz };
     }
 
     fn push32(&mut self, value: Long) {
-        let sp = self.a[SP] - 4;
-        self.a[SP] = sp;
+        let sp = self.regs.a[SP] - 4;
+        self.regs.a[SP] = sp;
         self.write32(sp, value);
     }
 
     fn pop32(&mut self) -> Long {
-        let oldsp = self.a[SP];
-        self.a[SP] = oldsp + 4;
+        let oldsp = self.regs.a[SP];
+        self.regs.a[SP] = oldsp + 4;
         self.read32(oldsp)
     }
 
@@ -767,33 +762,33 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
     fn read_source8_incpc(&mut self, src: usize, m: usize, incpc: bool) -> Byte {
         match src {
             0 => {  // move.l Dm, xx
-                self.d[m] as u8
+                self.regs.d[m] as u8
             },
             2 => {  // move.b (Am), xx
-                let adr = self.a[m];
+                let adr = self.regs.a[m];
                 self.read8(adr)
             },
             3 => {  // move.b (Am)+, xx
-                let adr = self.a[m];
-                if incpc { self.a[m] = adr + 1; }
+                let adr = self.regs.a[m];
+                if incpc { self.regs.a[m] = adr + 1; }
                 self.read8(adr)
             },
             5 => {  // move.b (123, Am), xx
-                let ofs = self.read16(self.pc) as SWord;
-                if incpc { self.pc += 2; }
-                self.read8((self.a[m] as SLong + ofs as SLong) as Adr)
+                let ofs = self.read16(self.regs.pc) as SWord;
+                if incpc { self.regs.pc += 2; }
+                self.read8((self.regs.a[m] as SLong + ofs as SLong) as Adr)
             },
             7 => {  // Misc.
                 match m {
                     1 => {  // move.b $XXXXXXXX.l, xx
-                        let adr = self.read32(self.pc);
-                        if incpc { self.pc += 4; }
+                        let adr = self.read32(self.regs.pc);
+                        if incpc { self.regs.pc += 4; }
                         self.read8(adr)
                     },
                     4 => {  // move.b #$XXXX, xx
                         if incpc {
-                            let value = self.read16(self.pc);
-                            if incpc { self.pc += 2; }
+                            let value = self.read16(self.regs.pc);
+                            if incpc { self.regs.pc += 2; }
                             (value & 0xff) as u8
                         } else {
                             panic!("Not implemented, m={}", m);
@@ -816,25 +811,25 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
     fn read_source16_incpc(&mut self, src: usize, m: usize, incpc: bool) -> Word {
         match src {
             0 => {  // move.w Dm, xx
-                self.d[m] as u16
+                self.regs.d[m] as u16
             },
             2 => {  // move.w (Am), xx
-                let adr = self.a[m];
+                let adr = self.regs.a[m];
                 self.read16(adr)
             },
             3 => {  // move.w (Am)+, xx
-                let adr = self.a[m];
-                if incpc { self.a[m] = adr + 2; }
+                let adr = self.regs.a[m];
+                if incpc { self.regs.a[m] = adr + 2; }
                 self.read16(adr)
             },
             5 => {  // move.w (123, Am), xx
-                let ofs = self.read16(self.pc) as SWord;
-                if incpc { self.pc += 2; }
-                self.read16((self.a[m] as SLong + ofs as SLong) as Adr)
+                let ofs = self.read16(self.regs.pc) as SWord;
+                if incpc { self.regs.pc += 2; }
+                self.read16((self.regs.a[m] as SLong + ofs as SLong) as Adr)
             },
             6 => {  // Memory Indirect Pre-indexed: move.w xx, (123, An, Dx)
-                let extension = self.read16(self.pc);
-                self.pc += 2;
+                let extension = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 if (extension & 0x100) != 0 {
                     panic!("Not implemented, src=6/{:04x}", extension);
                 } else {
@@ -842,25 +837,25 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                     let da = (extension & 0x8000) != 0;  // Displacement is address register?
                     let dr = ((extension >> 12) & 7) as usize;  // Displacement register.
                     let dl = (extension & 0x0800) != 0;  // Displacement long?
-                    let regofs = if dl { (if da {self.a[dr]} else {self.d[dr]}) as SLong } else { (if da {self.a[dr]} else {self.d[dr]}) as SWord as SLong };
-                    let adr = (ofs + (self.a[m] as SLong) + regofs) as Long;
+                    let regofs = if dl { (if da {self.regs.a[dr]} else {self.regs.d[dr]}) as SLong } else { (if da {self.regs.a[dr]} else {self.regs.d[dr]}) as SWord as SLong };
+                    let adr = (ofs + (self.regs.a[m] as SLong) + regofs) as Long;
                     self.read16(adr)
                 }
             },
             7 => {  // Misc.
                 match m {
                     1 => {  // move.b $XXXXXXXX.l, xx
-                        let adr = self.read32(self.pc);
-                        if incpc { self.pc += 4; }
+                        let adr = self.read32(self.regs.pc);
+                        if incpc { self.regs.pc += 4; }
                         self.read16(adr)
                     },
                     4 => {  // move.w #$XXXX, xx
                         if incpc {
-                            let value = self.read16(self.pc);
-                            self.pc += 2;
+                            let value = self.read16(self.regs.pc);
+                            self.regs.pc += 2;
                             value
                         } else {
-                            self.sr
+                            self.regs.sr
                         }
                     },
                     _ => {
@@ -880,28 +875,28 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
     fn read_source32_incpc(&mut self, src: usize, m: usize, incpc: bool) -> Long {
         match src {
             0 => {  // move.l Dm, xx
-                self.d[m]
+                self.regs.d[m]
             },
             1 => {  // move.l Am, xx
-                self.a[m]
+                self.regs.a[m]
             },
             2 => {  // move.l (Am), xx
-                let adr = self.a[m];
+                let adr = self.regs.a[m];
                 self.read32(adr)
             },
             3 => {  // move.l (Am)+, xx
-                let adr = self.a[m];
-                if incpc { self.a[m] = adr + 4; }
+                let adr = self.regs.a[m];
+                if incpc { self.regs.a[m] = adr + 4; }
                 self.read32(adr)
             },
             5 => {  // move.l (123, Am), xx
-                let ofs = self.read16(self.pc) as SWord;
-                if incpc { self.pc += 2; }
-                self.read32((self.a[m] as SLong + ofs as SLong) as Adr)
+                let ofs = self.read16(self.regs.pc) as SWord;
+                if incpc { self.regs.pc += 2; }
+                self.read32((self.regs.a[m] as SLong + ofs as SLong) as Adr)
             },
             6 => {  // Memory Indirect Pre-indexed: move.l xx, (123, An, Dx)
-                let extension = self.read16(self.pc);
-                self.pc += 2;
+                let extension = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 if (extension & 0x100) != 0 {
                     panic!("Not implemented, src=6/{:04x}", extension);
                 } else {
@@ -909,22 +904,22 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                     let da = (extension & 0x8000) != 0;  // Displacement is address register?
                     let dr = ((extension >> 12) & 7) as usize;  // Displacement register.
                     let dl = (extension & 0x0800) != 0;  // Displacement long?
-                    let regofs = if dl { (if da {self.a[dr]} else {self.d[dr]}) as SLong } else { (if da {self.a[dr]} else {self.d[dr]}) as SWord as SLong };
-                    let adr = (ofs + (self.a[m] as SLong) + regofs) as Long;
+                    let regofs = if dl { (if da {self.regs.a[dr]} else {self.regs.d[dr]}) as SLong } else { (if da {self.regs.a[dr]} else {self.regs.d[dr]}) as SWord as SLong };
+                    let adr = (ofs + (self.regs.a[m] as SLong) + regofs) as Long;
                     self.read32(adr)
                 }
             },
             7 => {  // Misc.
                 match m {
                     1 => {  // move.b $XXXXXXXX.l, xx
-                        let adr = self.read32(self.pc);
-                        if incpc { self.pc += 4; }
+                        let adr = self.read32(self.regs.pc);
+                        if incpc { self.regs.pc += 4; }
                         self.read32(adr)
                     },
                     4 => {  // move.l #$XXXX, xx
                         if incpc {
-                            let value = self.read32(self.pc);
-                            self.pc += 4;
+                            let value = self.read32(self.regs.pc);
+                            self.regs.pc += 4;
                             value
                         } else {
                             panic!("Not implemented, m={}", m);
@@ -944,24 +939,24 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
     fn write_destination8(&mut self, dst: usize, n: usize, value: Byte) {
         match dst {
             0 => {
-                self.d[n] = replace_byte(self.d[n], value);
+                self.regs.d[n] = replace_byte(self.regs.d[n], value);
             },
             2 => {  // move.b xx, (An)
-                self.write8(self.a[n], value);
+                self.write8(self.regs.a[n], value);
             },
             3 => {
-                let adr = self.a[n];
+                let adr = self.regs.a[n];
                 self.write8(adr, value);
-                self.a[n] = adr + 1;
+                self.regs.a[n] = adr + 1;
             },
             5 => {  // move.b xx, (123, An)
-                let ofs = self.read16(self.pc) as SWord;
-                self.pc += 2;
-                self.write8((self.a[n] as SLong + ofs as SLong) as Adr, value);
+                let ofs = self.read16(self.regs.pc) as SWord;
+                self.regs.pc += 2;
+                self.write8((self.regs.a[n] as SLong + ofs as SLong) as Adr, value);
             },
             6 => {  // Memory Indirect Pre-indexed: move.b xx, (123, An, Dx)
-                let extension = self.read16(self.pc);
-                self.pc += 2;
+                let extension = self.read16(self.regs.pc);
+                self.regs.pc += 2;
                 if (extension & 0x100) != 0 {
                     panic!("Not implemented, dst=6/{:04x}", extension);
                 } else {
@@ -969,16 +964,16 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
                     let da = (extension & 0x8000) != 0;  // Displacement is address register?
                     let dr = ((extension >> 12) & 7) as usize;  // Displacement register.
                     let dl = (extension & 0x0800) != 0;  // Displacement long?
-                    let regofs = if dl { (if da {self.a[dr]} else {self.d[dr]}) as SLong } else { (if da {self.a[dr]} else {self.d[dr]}) as SWord as SLong };
-                    let adr = (ofs + (self.a[n] as SLong) + regofs) as Long;
+                    let regofs = if dl { (if da {self.regs.a[dr]} else {self.regs.d[dr]}) as SLong } else { (if da {self.regs.a[dr]} else {self.regs.d[dr]}) as SWord as SLong };
+                    let adr = (ofs + (self.regs.a[n] as SLong) + regofs) as Long;
                     self.write8(adr, value);
                 }
             },
             7 => {
                 match n {
                     1 => {
-                        let d = self.read32(self.pc);
-                        self.pc += 4;
+                        let d = self.read32(self.regs.pc);
+                        self.regs.pc += 4;
                         self.write8(d, value);
                     },
                     _ => {
@@ -995,38 +990,38 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
     fn write_destination16(&mut self, dst: usize, n: usize, value: Word) {
         match dst {
             0 => {
-                self.d[n] = replace_word(self.d[n], value);
+                self.regs.d[n] = replace_word(self.regs.d[n], value);
             },
             1 => {
-                self.a[n] = replace_word(self.a[n], value);
+                self.regs.a[n] = replace_word(self.regs.a[n], value);
             },
             2 => {  // move.w xx, (An)
-                self.write16(self.a[n], value);
+                self.write16(self.regs.a[n], value);
             },
             3 => {
-                let adr = self.a[n];
+                let adr = self.regs.a[n];
                 self.write16(adr, value);
-                self.a[n] = adr + 2;
+                self.regs.a[n] = adr + 2;
             },
             4 => {
-                let adr = self.a[n] - 2;
-                self.a[n] = adr;
+                let adr = self.regs.a[n] - 2;
+                self.regs.a[n] = adr;
                 self.write16(adr, value);
             },
             5 => {  // move.w xx, (123, An)
-                let ofs = self.read16(self.pc) as SWord;
-                self.pc += 2;
-                self.write16((self.a[n] as SLong + ofs as SLong) as Adr, value);
+                let ofs = self.read16(self.regs.pc) as SWord;
+                self.regs.pc += 2;
+                self.write16((self.regs.a[n] as SLong + ofs as SLong) as Adr, value);
             },
             7 => {
                 match n {
                     1 => {
-                        let d = self.read32(self.pc);
-                        self.pc += 4;
+                        let d = self.read32(self.regs.pc);
+                        self.regs.pc += 4;
                         self.write16(d, value);
                     },
                     4 => {
-                        self.sr = value;
+                        self.regs.sr = value;
                     },
                     _ => {
                         panic!("Not implemented, n={}", n);
@@ -1042,34 +1037,34 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
     fn write_destination32(&mut self, dst: usize, n: usize, value: Long) {
         match dst {
             0 => {
-                self.d[n] = value;
+                self.regs.d[n] = value;
             },
             1 => {
-                self.a[n] = value;
+                self.regs.a[n] = value;
             },
             2 => {  // move.l xx, (An)
-                self.write32(self.a[n], value);
+                self.write32(self.regs.a[n], value);
             },
             3 => {
-                let adr = self.a[n];
+                let adr = self.regs.a[n];
                 self.write32(adr, value);
-                self.a[n] = adr + 4;
+                self.regs.a[n] = adr + 4;
             },
             4 => {
-                let adr = self.a[n] - 4;
-                self.a[n] = adr;
+                let adr = self.regs.a[n] - 4;
+                self.regs.a[n] = adr;
                 self.write32(adr, value);
             },
             5 => {  // move.l xx, (123, An)
-                let ofs = self.read16(self.pc) as SWord;
-                self.pc += 2;
-                self.write32((self.a[n] as SLong + ofs as SLong) as Adr, value);
+                let ofs = self.read16(self.regs.pc) as SWord;
+                self.regs.pc += 2;
+                self.write32((self.regs.a[n] as SLong + ofs as SLong) as Adr, value);
             },
             7 => {
                 match n {
                     1 => {
-                        let d = self.read32(self.pc);
-                        self.pc += 4;
+                        let d = self.read32(self.regs.pc);
+                        self.regs.pc += 4;
                         self.write32(d, value);
                     },
                     _ => {
@@ -1089,21 +1084,21 @@ impl <'a, BusT: BusTrait> Cpu<'a, BusT> {
         if eq       { ccr |= FLAG_Z; }
         if overflow { ccr |= FLAG_V; }
         if neg      { ccr |= FLAG_N; }
-        self.sr = (self.sr & !(FLAG_N | FLAG_Z | FLAG_V | FLAG_C)) | ccr;
+        self.regs.sr = (self.regs.sr & !(FLAG_N | FLAG_Z | FLAG_V | FLAG_C)) | ccr;
     }
 
     fn set_and_sr(&mut self, zero: bool, neg: bool) {
         let mut ccr = 0;
         if zero { ccr |= FLAG_Z; }
         if neg  { ccr |= FLAG_N; }
-        self.sr = (self.sr & !(FLAG_N | FLAG_Z | FLAG_V | FLAG_C)) | ccr;
+        self.regs.sr = (self.regs.sr & !(FLAG_N | FLAG_Z | FLAG_V | FLAG_C)) | ccr;
     }
 
     fn set_tst_sr(&mut self, zero: bool, neg: bool) {
         let mut ccr = 0;
         if zero { ccr |= FLAG_Z; }
         if neg  { ccr |= FLAG_N; }
-        self.sr = (self.sr & !(FLAG_V | FLAG_C | FLAG_Z | FLAG_N)) | ccr;
+        self.regs.sr = (self.regs.sr & !(FLAG_V | FLAG_C | FLAG_Z | FLAG_N)) | ccr;
     }
 
     fn read8(&mut self, adr: Adr) -> Byte {
