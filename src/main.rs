@@ -10,7 +10,9 @@ fn main() {
     match fs::read("X68BIOSE/IPLROM.DAT") {
         Result::Ok(ipl) => {
             let mut x68k = X68k::new(ipl);
-            x68k.main_loop();
+            loop {
+                x68k.update(10000);
+            }
         },
         Result::Err(err) => {
             panic!(err);

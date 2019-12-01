@@ -23,11 +23,10 @@ pub struct Cpu<'a, BusT> {
 
 impl<'a, BusT: BusTrait> Cpu<'a, BusT> {
     pub fn new(regs: &'a mut Registers, bus: &'a mut BusT) -> Cpu<'a, BusT> {
-        let mut cpu = Cpu {
+        let cpu = Cpu {
             regs,
             bus,
         };
-        cpu.reset();
         cpu
     }
 
@@ -43,9 +42,9 @@ impl<'a, BusT: BusTrait> Cpu<'a, BusT> {
         self.regs.pc = pc;
     }
 
-    pub fn run(&mut self) {
+    pub fn run_cycles(&mut self, cycles: usize) {
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            loop {
+            for _ in 0..cycles {
                 let (sz, mnemonic) = disasm(self.bus, self.regs.pc);
                 println!("{:06x}: {}  {}", self.regs.pc, dump_mem(self.bus, self.regs.pc, sz, 5), mnemonic);
                 self.step();
