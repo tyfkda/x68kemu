@@ -1,3 +1,7 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use super::vram::{Vram};
 use super::super::cpu::{BusTrait};
 use super::super::types::{Byte, Adr};
 
@@ -9,6 +13,7 @@ pub struct Bus {
     sram: Vec<Byte>,
     ipl: Vec<Byte>,
     booting: bool,
+    vram: Rc<RefCell<Vram>>,
 }
 
 impl BusTrait for Bus {
@@ -66,7 +71,7 @@ impl BusTrait for Bus {
         if /*0x000000 <= adr &&*/ adr < RAM_SIZE as Adr {
             self.mem[adr as usize] = value;
         } else if 0xe00000 <= adr && adr <= 0xe7ffff {  // TEXT VRAM
-            // TODO: Implement.
+            self.vram.borrow_mut().write_text(adr - 0xe00000, value);
         } else if 0xe80000 <= adr && adr <= 0xe81fff {  // CRTC
             // TODO: Implement.
         } else if 0xe82000 <= adr && adr <= 0xe83fff {  // video
@@ -112,12 +117,13 @@ impl BusTrait for Bus {
 }
 
 impl Bus {
-    pub fn new(ipl: Vec<Byte>) -> Bus {
+    pub fn new(ipl: Vec<Byte>, vram: Rc<RefCell<Vram>>) -> Bus {
         Bus {
             mem: vec![0; RAM_SIZE],
             sram: vec![0; SRAM_SIZE],
             ipl: ipl,
             booting: true,
+            vram,
         }
     }
 }
