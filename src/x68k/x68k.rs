@@ -1,4 +1,5 @@
 use super::bus::Bus;
+use super::vram::Vram;
 use super::super::cpu::Cpu;
 use super::super::types::Byte;
 
@@ -8,7 +9,8 @@ pub struct X68k {
 
 impl X68k {
     pub fn new(ipl: Vec<Byte>) -> Self {
-        let bus = Bus::new(ipl);
+        let vram = Vram::new();
+        let bus = Bus::new(ipl, vram);
         let mut cpu = Cpu::new(bus);
         cpu.reset();
 

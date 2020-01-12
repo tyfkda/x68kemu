@@ -1,3 +1,4 @@
+use super::vram::Vram;
 use super::super::cpu::BusTrait;
 use super::super::types::{Byte, Adr};
 
@@ -9,6 +10,7 @@ pub struct Bus {
     sram: Vec<Byte>,
     ipl: Vec<Byte>,
     booting: bool,
+    vram: Vram,
 }
 
 impl BusTrait for Bus {
@@ -23,6 +25,10 @@ impl BusTrait for Bus {
             } else {
                 self.mem[adr as usize]
             }
+        } else if (0xc00000..=0xdfffff).contains(&adr) {  // Graphic RAM
+            return self.vram.read_graphic(adr - 0xc00000);
+        } else if (0xe00000..=0xe7ffff).contains(&adr) {  // TEXT RAM
+            return self.vram.read_text(adr - 0xe00000);
         } else if (0xe80000..=0xe80030).contains(&adr) {  // CRTC
             // TODO: Implement.
             return 0;
@@ -65,8 +71,10 @@ impl BusTrait for Bus {
     fn write8(&mut self, adr: Adr, value: Byte) {
         if /*0x000000 <= adr &&*/ adr < RAM_SIZE as Adr {
             self.mem[adr as usize] = value;
+        } else if (0xc00000..=0xdfffff).contains(&adr) {  // Graphic VRAM
+            self.vram.write_graphic(adr - 0xc00000, value);
         } else if (0xe00000..=0xe7ffff).contains(&adr) {  // TEXT VRAM
-            // TODO: Implement.
+            self.vram.write_text(adr - 0xe00000, value);
         } else if (0xe80000..=0xe81fff).contains(&adr) {  // CRTC
             // TODO: Implement.
         } else if (0xe82000..=0xe83fff).contains(&adr) {  // video
@@ -112,12 +120,13 @@ impl BusTrait for Bus {
 }
 
 impl Bus {
-    pub fn new(ipl: Vec<Byte>) -> Self {
+    pub fn new(ipl: Vec<Byte>, vram: Vram) -> Self {
         Self {
             mem: vec![0; RAM_SIZE],
             sram: vec![0; SRAM_SIZE],
             ipl,
             booting: true,
+            vram,
         }
     }
 }
