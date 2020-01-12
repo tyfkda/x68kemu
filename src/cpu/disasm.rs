@@ -1,6 +1,6 @@
 use super::bus_trait::{BusTrait};
-use super::cpu::{get_branch_offset, conv07to18};
 use super::opcode::{Opcode, INST};
+use super::util::{get_branch_offset, conv07to18};
 use super::super::types::{Byte, Word, Long, SByte, SWord, SLong, Adr};
 
 const DREG_NAMES: [&str; 8] = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7"];
