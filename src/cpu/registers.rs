@@ -1,20 +1,15 @@
 use super::super::types::{Word, Long, Adr};
 
+#[derive (Default)]
 pub struct Registers {
-    pub(crate) a: [Adr; 8],  // Address registers
-    pub(crate) d: [Long; 8],  // Data registers
-    pub(crate) pc: Adr,
-    pub(crate) sr: Word,
+    pub a: [Adr; 8],  // Address registers
+    pub d: [Long; 8],  // Data registers
+    pub pc: Adr,
+    pub sr: Word,
 }
 
 impl Registers {
-    pub fn new() -> Registers {
-        let regs = Registers {
-            a: [0; 8],
-            d: [0; 8],
-            pc: 0,
-            sr: 0,
-        };
-        regs
+    pub fn new() -> Self {
+        Self::default()
     }
 }

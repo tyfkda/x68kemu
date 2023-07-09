@@ -1,4 +1,4 @@
-use super::bus_trait::{BusTrait};
+use super::bus_trait::BusTrait;
 use super::super::types::{Word, SByte, SWord, SLong, Adr};
 
 pub fn get_branch_offset<BusT: BusTrait>(op: Word, bus: &mut BusT, adr: Adr) -> (SLong, u32) {

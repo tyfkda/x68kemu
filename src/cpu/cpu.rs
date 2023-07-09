@@ -1,8 +1,8 @@
 use std::panic;
 
-use super::bus_trait::{BusTrait};
-use super::registers::{Registers};
-use super::disasm::{disasm};
+use super::bus_trait::BusTrait;
+use super::registers::Registers;
+use super::disasm::disasm;
 use super::opcode::{Opcode, INST};
 use super::util::{get_branch_offset, conv07to18};
 use super::super::types::{Byte, Word, Long, SByte, SWord, SLong, Adr};
@@ -23,13 +23,12 @@ pub struct Cpu<BusT> {
 }
 
 impl<BusT: BusTrait> Cpu<BusT> {
-    pub fn new(bus: BusT) -> Cpu<BusT> {
+    pub fn new(bus: BusT) -> Self {
         let regs = Registers::new();
-        let cpu = Cpu {
+        Self {
             regs,
             bus,
-        };
-        cpu
+        }
     }
 
     pub fn reset(&mut self) {
@@ -220,7 +219,7 @@ impl<BusT: BusTrait> Cpu<BusT> {
             Opcode::Swap => {
                 let di = (op & 7) as usize;
                 let v = self.regs.d[di];
-                self.regs.d[di] = (v << 16) | (v >> 16);
+                self.regs.d[di] = v.rotate_right(16);
             },
             Opcode::CmpByte => {
                 let si = (op & 7) as usize;
@@ -702,7 +701,7 @@ impl<BusT: BusTrait> Cpu<BusT> {
                 let (ofs, sz) = get_branch_offset(op, &mut self.bus, self.regs.pc);
                 self.regs.pc += sz;
                 self.push32(self.regs.pc);
-                self.regs.pc = ((startadr + 2) as i32 + ofs as i32) as u32;
+                self.regs.pc = ((startadr + 2) as i32 + ofs) as u32;
             },
             Opcode::JsrA => {
                 let si = (op & 7) as usize;

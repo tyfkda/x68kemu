@@ -1,4 +1,4 @@
-use super::bus_trait::{BusTrait};
+use super::bus_trait::BusTrait;
 use super::opcode::{Opcode, INST};
 use super::util::{get_branch_offset, conv07to18};
 use super::super::types::{Byte, Word, Long, SByte, SWord, SLong, Adr};
@@ -17,7 +17,7 @@ fn aind(no: Word) -> String { AINDIRECT_NAMES[no as usize].to_string() }
 fn apostinc(no: Word) -> String { APOSTINC_NAMES[no as usize].to_string() }
 fn apredec(no: Word) -> String { APREDEC_NAMES[no as usize].to_string() }
 
-pub(crate) fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String) {
+pub fn disasm<BusT: BusTrait>(bus: &mut BusT, adr: Adr) -> (usize, String) {
     let op = bus.read16(adr);
     let inst = &INST[op as usize];
 
@@ -572,11 +572,11 @@ fn movem_regs(bits: Word, inv: bool) -> String {
     fn bit(i: usize, j: usize, inv: bool) -> u16 {
         let index = i * 8 + j;
         let shift = if inv {15 - index} else {index};
-        return 1 << shift;
+        1 << shift
     }
 
     let mut regs = Vec::new();
-    for i in 0..2 {
+    for (i, da) in DA.iter().enumerate() {
         let mut j = 0;
         loop {
             if (bits & bit(i, j, inv)) == 0 {
@@ -588,16 +588,16 @@ fn movem_regs(bits: Word, inv: bool) -> String {
                     if k >= 8 || (bits & bit(i, k, inv)) == 0 { break; }
                 }
                 if k == j + 1 {
-                    regs.push(format!("{}{}", DA[i], j));
+                    regs.push(format!("{}{}", da, j));
                 } else {
-                    regs.push(format!("{}{}-{}{}", DA[i], j, DA[i], k - 1));
+                    regs.push(format!("{}{}-{}{}", da, j, da, k - 1));
                 }
                 j = k;
             }
             if j >= 8 { break; }
         }
     }
-    return regs.join("/");
+    regs.join("/")
 }
 
 fn read_source8<BusT: BusTrait>(bus: &mut BusT, adr: Adr,  src: usize, m: Word) -> (u32, String) {

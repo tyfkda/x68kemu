@@ -1,9 +1,9 @@
-use super::super::types::{Word};
+use super::super::types::Word;
 
 use lazy_static::lazy_static;
 
 #[derive(Clone)]
-pub(crate) enum Opcode {
+pub enum Opcode {
     Unknown,
     Nop,                 // nop
     MoveByte,            // move.b XX, YY
@@ -97,11 +97,11 @@ pub(crate) enum Opcode {
 }
 
 #[derive(Clone)]
-pub(crate) struct Inst {
-    pub(crate) op: Opcode,
+pub struct Inst {
+    pub op: Opcode,
 }
 
-fn mask_inst(m: &mut Vec<&Inst>, mask: Word, value: Word, inst: &'static Inst) {
+fn mask_inst(m: &mut [&Inst], mask: Word, value: Word, inst: &'static Inst) {
     let mut shift = mask;
     let mut masked: Vec<usize> = vec!();
     // Find masked bits.
@@ -114,14 +114,14 @@ fn mask_inst(m: &mut Vec<&Inst>, mask: Word, value: Word, inst: &'static Inst) {
 
     for i in 0..(1 << masked.len()) {
         let mut opcode = value;
-        for j in 0..masked.len() {
-            opcode |= ((i >> j) & 1) << masked[j];
+        for (j, m) in masked.iter().enumerate() {
+            opcode |= ((i >> j) & 1) << m;
         }
         m[opcode as usize] = inst;
     }
 }
 
-fn range_inst(m: &mut Vec<&Inst>, range: &mut std::ops::Range<Word>, inst: &'static Inst) {
+fn range_inst(m: &mut [&Inst], range: &mut std::ops::Range<Word>, inst: &'static Inst) {
     for op in range {
         m[op as usize] = inst;
     }

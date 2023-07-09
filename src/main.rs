@@ -1,11 +1,11 @@
 use std::fs;
-use std::io::{ErrorKind};
+use std::io::ErrorKind;
 
 mod cpu;
 mod types;
 mod x68k;
 
-use self::x68k::{X68k};
+use self::x68k::X68k;
 
 const IPLROM_PATH: &str = "X68BIOSE/IPLROM.DAT";
 
