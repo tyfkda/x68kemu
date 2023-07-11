@@ -1,7 +1,7 @@
 mod bus_trait;
 mod cpu;
 mod registers;
-mod disasm;
+pub mod disasm;
 mod opcode;
 mod util;
 
