@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use super::vram::Vram;
 use super::super::cpu::BusTrait;
 use super::super::types::{Byte, Adr};
@@ -9,18 +11,18 @@ pub struct Bus {
     mem: Vec<Byte>,
     sram: Vec<Byte>,
     ipl: Vec<Byte>,
-    booting: bool,
+    booting: Cell<bool>,
     vram: Vram,
 }
 
 impl BusTrait for Bus {
     fn reset(&mut self) {
-        self.booting = true;
+        self.booting = true.into();
     }
 
-    fn read8(&mut self, adr: Adr) -> Byte {
+    fn read8(&self, adr: Adr) -> Byte {
         if /*0x000000 <= adr &&*/ adr < RAM_SIZE as Adr {
-            if self.booting {
+            if self.booting.get() {
                 self.ipl[(adr + 0x10000) as usize]
             } else {
                 self.mem[adr as usize]
@@ -60,7 +62,7 @@ impl BusTrait for Bus {
             self.sram[(adr - 0xed0000) as usize]
         } else if (0xfe0000..=0xffffff).contains(&adr) {
             if adr >= 0xff0000 {
-                self.booting = false;
+                self.booting.set(false);
             }
             self.ipl[(adr - 0xfe0000) as usize]
         } else {
@@ -125,7 +127,7 @@ impl Bus {
             mem: vec![0; RAM_SIZE],
             sram: vec![0; SRAM_SIZE],
             ipl,
-            booting: true,
+            booting: true.into(),
             vram,
         }
     }
